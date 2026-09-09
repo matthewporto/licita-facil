@@ -3421,6 +3421,13 @@ function openFinanceiroForm(existing, defaultAnoMes){
           <div class="field"><label>Vencimento${existing?'':' (1ª parcela)'}</label>
             <input type="date" name="dataVencimento" id="financeiro-vencimento-input" value="${esc(vencimentoDefault)}" required>
           </div>
+          <div class="field"><label>Empresa</label>
+            <select name="empresaId" required>
+              <option value="">Selecione...</option>
+              ${state.empresas.map(e=>`<option value="${e.id}" ${(f.empresaId?f.empresaId===e.id:(state.empresas.length===1))?'selected':''}>${esc(e.nomeFantasia||e.razaoSocial)}</option>`).join('')}
+            </select>
+            ${state.empresas.length===0?`<p style="font-size:.76rem;color:var(--warn);margin:4px 0 0">Nenhuma empresa cadastrada ainda — <span style="text-decoration:underline;cursor:pointer" onclick="closePanel(); setView('empresas');">cadastre uma primeiro</span>.</p>`:''}
+          </div>
           <div class="field"><label>NF</label>
             <input name="nf" value="${esc(f.nf)}" placeholder="Nº da nota (opcional)">
           </div>
@@ -3503,8 +3510,11 @@ function openFinanceiroForm(existing, defaultAnoMes){
     if(!form.reportValidity()) return;
     if(!exigirPermissaoAcao('financeiro', existing?'editar':'criar')) return;
     const fd = new FormData(form);
+    const empresaSelecionada = empresaById(fd.get('empresaId'));
     const base = {
       dataVencimento: fd.get('dataVencimento'),
+      empresaId: fd.get('empresaId') || null,
+      empresaNome: empresaSelecionada ? (empresaSelecionada.nomeFantasia||empresaSelecionada.razaoSocial) : '',
       nf: fd.get('nf') || null,
       descricao: fd.get('descricao'),
       valorSemAlterar: fd.get('valorSemAlterar')===''?null:Number(fd.get('valorSemAlterar')),
@@ -3528,6 +3538,7 @@ function openFinanceiroForm(existing, defaultAnoMes){
       for(let i=2;i<=n;i++){
         const idx = i-2;
         docs.push({
+          empresaId: base.empresaId, empresaNome: base.empresaNome,
           nf: base.nf, descricao: base.descricao, parcela: mensal?'Mensal':(i+'/'+n),
           dataVencimento: datas[idx] ? datas[idx].value : '',
           valorSemAlterar: (sems[idx] && sems[idx].value!=='') ? Number(sems[idx].value) : null,
@@ -5606,7 +5617,7 @@ function renderCustosMinimos(){
 
 function financeiroMatchesQuery(f, q){
   const partes = [
-    f.descricao, f.nf, f.parcela,
+    f.descricao, f.nf, f.parcela, f.empresaNome,
     fmtDate(f.dataVencimento), f.dataVencimento,
     f.valorSemAlterar!=null?String(f.valorSemAlterar):'', f.valorSemAlterar!=null?fmtBRL(f.valorSemAlterar):'',
     f.valorAltera!=null?String(f.valorAltera):'', f.valorAltera!=null?fmtBRL(f.valorAltera):'',
@@ -5699,11 +5710,12 @@ function renderFinanceiroMesDetail(){
         ${podeAcao('financeiro','criar')?`<button class="btn btn-primary" onclick="openFinanceiroForm(null, '${anoMesStr(ano,mes)}')">${ICONS.plus}Novo lançamento</button>`:''}</div>
       ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca.</p></div>` : `
       <div class="table-wrap"><table>
-        <thead><tr><th>Vencimento</th><th>NF</th><th>Razão / Item</th><th>Parcela</th><th class="thc">Sem alterar</th><th class="thc">Altera o lucro</th><th class="thc">Pessoa física</th><th></th></tr></thead>
+        <thead><tr><th>Vencimento</th><th>Empresa</th><th>NF</th><th>Razão / Item</th><th>Parcela</th><th class="thc">Sem alterar</th><th class="thc">Altera o lucro</th><th class="thc">Pessoa física</th><th></th></tr></thead>
         <tbody>
           ${rows.map(f=>`
             <tr onclick='openFinanceiroForm(${JSON.stringify(f).replace(/'/g,"&#39;")})'>
               <td style="white-space:nowrap">${fmtDate(f.dataVencimento)}</td>
+              <td class="truncate">${esc(f.empresaNome)||'—'}</td>
               <td class="mono truncate" style="max-width:110px">${esc(f.nf)||'—'}</td>
               <td class="truncate">${esc(f.descricao)}</td>
               <td style="white-space:nowrap">${esc(f.parcela)||'—'}</td>
