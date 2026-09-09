@@ -273,7 +273,9 @@ td.wrap-desc, .wrap-desc{ min-width:200px; max-width:320px; white-space:normal; 
   #print-area .doc-fields div{ font-size:9pt; margin-bottom:5pt; color:#141414; }
   #print-area .doc-fields .label{ color:#646464; }
   #print-area table{ width:100%; border-collapse:collapse; font-size:7pt; }
+  #print-area table.doc-table-pedido{ font-size:10pt; }
   #print-area th, #print-area td{ border:1px solid #ccc; padding:3pt 4pt; text-align:left; }
+  #print-area table.doc-table-pedido th, #print-area table.doc-table-pedido td{ padding:4pt 5pt; }
   #print-area th{ background:#ebebeb !important; color:#141414; font-weight:bold; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 }
 </style>
@@ -4791,7 +4793,7 @@ function montarPdfPedidoConteudo(doc, left, p, itens){
       qtd, sep, ent, saldoItem, pdfBRL(unit), custo>0?pdfBRL(custo):'—', custo>0?pdfBRL(lucroUnit):'—', margem!==null?margem.toFixed(1)+'%':'—', pdfBRL(qtd*unit),
     ];
   });
-  doc.autoTable({ startY:y, head:[colunas], body:linhas, styles:{fontSize:7,cellPadding:3,overflow:'linebreak'}, headStyles:{fillColor:[235,235,235],textColor:20,fontStyle:'bold'}, columnStyles:{2:{cellWidth:95}}, margin:{left,right:left}, theme:'grid' });
+  doc.autoTable({ startY:y, head:[colunas], body:linhas, styles:{fontSize:10,cellPadding:3,overflow:'linebreak'}, headStyles:{fillColor:[235,235,235],textColor:20,fontStyle:'bold'}, columnStyles:{2:{cellWidth:95}}, margin:{left,right:left}, theme:'grid' });
 }
 
 function montarPdfPedidoCompra(doc, left){
@@ -4915,8 +4917,8 @@ function htmlCamposImpressao(campos){
     '<div><span class="label">'+esc(label)+':</span> <b>'+esc(value===undefined||value===null||value===''?'—':String(value))+'</b></div>'
   ).join('') + '</div>';
 }
-function htmlTabelaImpressao(colunas, linhas){
-  return '<table><thead><tr>'+colunas.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+
+function htmlTabelaImpressao(colunas, linhas, cssClass){
+  return '<table'+(cssClass?' class="'+cssClass+'"':'')+'><thead><tr>'+colunas.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+
     linhas.map(row=>'<tr>'+row.map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>').join('')+
     '</tbody></table>';
 }
@@ -4973,7 +4975,7 @@ function montarImpressaoPedidoConteudo(p, itens){
       + '<div class="doc-box"><span class="label">PRAZO DE ENTREGA</span><b>'+esc(p.dataLimiteEntrega?fmtDate(p.dataLimiteEntrega):'Sem prazo definido')+'</b></div>'
     + '</div>'
   + '</div><hr class="doc-hr">';
-  return header + htmlCamposImpressao(campos) + htmlTabelaImpressao(colunas, linhas);
+  return header + htmlCamposImpressao(campos) + htmlTabelaImpressao(colunas, linhas, 'doc-table-pedido');
 }
 
 function montarImpressaoPedidoCompra(){
