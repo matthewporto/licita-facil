@@ -375,6 +375,7 @@ const state = {
   view:'painel',
   atas:[], orgaos:[], pedidos:[], empresas:[], pedidosCompra:[], faturas:[], despesas:[], custosMinimos:[], usuarios:[], lembretes:[], financeiro:[],
   custoMinimoSearch:'',
+  orgaoSearch:'',
   lembreteSearch:'',
   lembreteStatusFilter:'pendentes',
   lembreteAlertaMostrado:false,
@@ -4098,24 +4099,34 @@ async function handleDeleteAta(id){
 }
 
 function renderOrgaos(){
+  let rows = state.orgaos;
+  if(state.orgaoSearch.trim()){
+    const q = state.orgaoSearch.toLowerCase();
+    rows = rows.filter(o=> (o.nome||'').toLowerCase().includes(q) || (o.cnpj||'').toLowerCase().includes(q) || (o.cidadeUf||'').toLowerCase().includes(q) || (o.responsavel||'').toLowerCase().includes(q) || (o.telefone||'').toLowerCase().includes(q) || (o.email||'').toLowerCase().includes(q));
+  }
+
   return `
     <div class="topbar">
-      <div><h1>Órgãos Públicos</h1><div class="sub">Cadastro de apoio, usado ao registrar Atas e Contratos.</div></div>
+      <div><h1>Órgãos Públicos</h1><div class="sub">${state.orgaos.length} órgão(s) cadastrado(s) · Cadastro de apoio, usado ao registrar Atas e Contratos.</div></div>
       <div class="actions">${podeAcao('orgaos','criar')?`<button class="btn btn-primary" onclick="openOrgaoForm()">${ICONS.plus}Novo órgão</button>`:''}</div>
     </div>
+    ${state.orgaos.length===0 ? '' : `
+    <div class="toolbar">
+      <div class="search">${ICONS.search}<input id="orgaos-search-input" placeholder="Buscar por nome, CNPJ, cidade/UF, responsável ou contato..." value="${esc(state.orgaoSearch)}" oninput="state.orgaoSearch=this.value; render();"></div>
+    </div>`}
     <div class="card">
       ${state.orgaos.length===0 ? `
       <div class="empty"><h3>Nenhum órgão cadastrado</h3><p>Cadastre os órgãos com quem você tem Atas e Contratos.</p>
         ${podeAcao('orgaos','criar')?`<button class="btn btn-primary" onclick="openOrgaoForm()">${ICONS.plus}Novo órgão</button>`:''}</div>
-      ` : `
+      ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca.</p></div>` : `
       <div class="table-wrap"><table>
         <thead><tr><th>Nome</th><th>Esfera</th><th>Cidade/UF</th><th>Responsável</th><th>Contato</th><th></th></tr></thead>
         <tbody>
-          ${state.orgaos.map(o=>`
+          ${rows.map(o=>`
             <tr onclick="setView('orgao-detail',{orgaoId:'${o.id}'})">
-              <td>${esc(o.nome)}</td>
+              <td class="truncate">${esc(o.nome)}</td>
               <td>${esc(o.esfera)||'—'}</td>
-              <td>${esc(o.cidadeUf)||'—'}</td>
+              <td style="white-space:nowrap">${esc(o.cidadeUf)||'—'}</td>
               <td>${esc(o.responsavel)||'—'}</td>
               <td>${esc(o.telefone||o.email)||'—'}</td>
               <td onclick="event.stopPropagation()">${podeAcao('orgaos','excluir')?`<button class="icon-btn" onclick="deleteOrgao('${o.id}')">${ICONS.trash}</button>`:''}</td>
