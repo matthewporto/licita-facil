@@ -3986,12 +3986,15 @@ function renderAtaDetail(){
   return `
     <div class="topbar">
       <div>
-        <button class="btn btn-ghost btn-sm" style="margin-bottom:10px" onclick="setView('atas')">${ICONS.back} Voltar</button>
+        <button class="btn btn-ghost btn-sm no-print" style="margin-bottom:10px" onclick="setView('atas')">${ICONS.back} Voltar</button>
         <h1>${esc(a.numero)||'Sem número'}</h1>
         <div class="sub">${esc(a.orgao)}${a.empresaNome?` <span style="color:var(--ink-faint)">· via</span> ${esc(a.empresaNome)}`:''}</div>
       </div>
-      <div class="actions">
+      <div class="actions no-print">
         ${podeAcao('pedidos','criar')?`<button class="btn btn-primary" onclick="openPedidoForm('${a.id}')">${ICONS.cart}Novo Pedido</button>`:''}
+        <button class="btn btn-ghost" onclick="copyAtaExcel('${a.id}')">${ICONS.sheet}Copiar para Excel</button>
+        <button class="btn btn-ghost" onclick="imprimirPagina()">${ICONS.print}Imprimir</button>
+        <button class="btn btn-ghost" onclick="abrirImpressao()">${ICONS.print}Baixar PDF</button>
         ${podeAcao('atas','editar')?`<button class="btn btn-ghost" onclick='openAtaForm(${JSON.stringify(a).replace(/'/g,"&#39;")})'>${ICONS.edit}Editar</button>`:''}
         ${podeAcao('atas','excluir')?`<button class="btn btn-danger" onclick="handleDeleteAta('${a.id}')">${ICONS.trash}Excluir</button>`:''}
       </div>
@@ -4819,6 +4822,103 @@ function montarPdfPedidoConteudo(doc, left, p, itens){
   doc.autoTable({ startY:y, head:[colunas], body:linhas, styles:{fontSize:10,cellPadding:3,overflow:'linebreak'}, headStyles:{fillColor:[235,235,235],textColor:20,fontStyle:'bold'}, columnStyles:{2:{cellWidth:95}}, margin:{left,right:left}, theme:'grid' });
 }
 
+function ataTotaisCalc(a, itens){
+  const valorTotal = itens.reduce((s,it)=>s+((Number(it.quantidadeContratada)||0)*(Number(it.valorUnitario)||0)),0);
+  const valorUtilizado = itens.reduce((s,it)=>s+((Number(it.quantidadeConsumida)||0)*(Number(it.valorUnitario)||0)),0);
+  const saldo = valorTotal - valorUtilizado;
+  let lucroTotal=0, valorComCusto=0;
+  itens.forEach(it=>{
+    const custo = Number(it.valorCusto)||0;
+    if(custo>0){
+      const qtd = Number(it.quantidadeContratada)||0;
+      lucroTotal += qtd*((Number(it.valorUnitario)||0)-custo);
+      valorComCusto += qtd*(Number(it.valorUnitario)||0);
+    }
+  });
+  const margemLucro = valorComCusto>0 ? (lucroTotal/valorComCusto*100) : null;
+  return { valorTotal, valorUtilizado, saldo, lucroTotal, margemLucro };
+}
+function ataCamposImpressao(a, itens){
+  const { valorTotal, valorUtilizado, saldo, margemLucro } = ataTotaisCalc(a, itens);
+  return [['Empresa', a.empresaNome], ['Órgão', a.orgao], ['CNPJ do órgão', a.cnpj], ['Cidade', a.cidade],
+   ['Tipo', TIPOS_LABEL[a.tipo]], ['Modalidade', MODALIDADES_LABEL[a.modalidade]], ['Processo/pregão', a.processo],
+   ['Início da vigência', fmtDate(a.inicioVigencia)], ['Fim da vigência', fmtDate(a.fimVigencia)],
+   ['Responsável', a.responsavel], ['Contato', a.contato],
+   ['Valor total', pdfBRL(valorTotal)], ['Valor utilizado', pdfBRL(valorUtilizado)], ['Saldo disponível', pdfBRL(saldo)],
+   ['Margem de lucro', margemLucro===null?'—':margemLucro.toFixed(1)+'%']];
+}
+function ataColunasItens(){
+  return ['Item','Lote','Descrição','Marca','Un.','Qtd. contratada','Valor unit.','Valor de custo','Lucro','Qtd. consumida','Saldo'];
+}
+function ataLinhasItens(itens){
+  return ordenarPorNumeroItem(itens).map(it=>{
+    const qtd = Number(it.quantidadeContratada)||0;
+    const consumida = Number(it.quantidadeConsumida)||0;
+    const saldoItem = qtd-consumida;
+    const unit = Number(it.valorUnitario)||0;
+    const custo = Number(it.valorCusto)||0;
+    const lucroUnit = unit-custo;
+    return [
+      it.numeroItem||'—', it.lote||'—', it.descricao||'', it.marca||'—', it.unidade||'—',
+      qtd, pdfBRL(unit), custo>0?pdfBRL(custo):'—', custo>0?pdfBRL(lucroUnit):'—', consumida, saldoItem,
+    ];
+  });
+}
+
+function montarPdfAta(doc, left){
+  const a = ataById(state.currentAtaId);
+  if(!a) return null;
+  const itens = state.currentItens;
+  let y = 36;
+  doc.setFont('helvetica','bold'); doc.setFontSize(15); doc.setTextColor(20);
+  doc.text((a.numero||'Sem número')+' — '+(a.orgao||''), left, y);
+  y += 20;
+  ataCamposImpressao(a, itens).forEach(([label,value])=>{
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100);
+    doc.text(label+':', left, y);
+    doc.setFont('helvetica','bold'); doc.setTextColor(20);
+    doc.text(value===undefined||value===null||value===''?'—':String(value), left+95, y);
+    y += 13;
+  });
+  y += 6;
+  doc.autoTable({ startY:y, head:[ataColunasItens()], body:ataLinhasItens(itens), styles:{fontSize:7,cellPadding:3,overflow:'linebreak'}, headStyles:{fillColor:[235,235,235],textColor:20,fontStyle:'bold'}, margin:{left,right:left}, theme:'grid' });
+  return 'ata-'+(a.numero||'').replace(/[^a-zA-Z0-9-_]/g,'')+'.pdf';
+}
+
+function montarImpressaoAta(){
+  const a = ataById(state.currentAtaId);
+  if(!a) return null;
+  const itens = state.currentItens;
+  const header = '<div class="doc-title">'+esc(a.numero||'Sem número')+' — '+esc(a.orgao||'')+'</div>';
+  return header + htmlCamposImpressao(ataCamposImpressao(a, itens)) + htmlTabelaImpressao(ataColunasItens(), ataLinhasItens(itens));
+}
+
+async function copyAtaExcel(ataId){
+  const a = ataById(ataId);
+  if(!a) return;
+  const itens = state.currentItens;
+  const header = ['Item','Lote','Descrição','Marca','Un.','Qtd. contratada','Valor unit.','Valor de custo','Lucro','Qtd. consumida','Saldo'];
+  const lines = [header.join('\t')];
+  ordenarPorNumeroItem(itens).forEach(it=>{
+    const qtd = Number(it.quantidadeContratada)||0;
+    const consumida = Number(it.quantidadeConsumida)||0;
+    const saldoItem = qtd-consumida;
+    const unit = Number(it.valorUnitario)||0;
+    const custo = Number(it.valorCusto)||0;
+    const lucroUnit = unit-custo;
+    lines.push([
+      it.numeroItem||'', it.lote||'', it.descricao||'', it.marca||'', it.unidade||'',
+      qtd,
+      unit.toFixed(2).replace('.',','),
+      custo>0?custo.toFixed(2).replace('.',','):'',
+      custo>0?lucroUnit.toFixed(2).replace('.',','):'',
+      consumida, saldoItem,
+    ].join('\t'));
+  });
+  const ok = await copyTextToClipboard(lines.join('\n'));
+  toast(ok ? 'Copiado! Cole (Ctrl+V) numa planilha do Excel ou Google Sheets.' : 'Não foi possível copiar automaticamente — tente novamente.');
+}
+
 function montarPdfPedidoCompra(doc, left){
   const p = pedidoCompraById(state.currentPedidoCompraId);
   if(!p) return null;
@@ -5066,6 +5166,7 @@ function imprimirPagina(){
   if(state.view==='pedido-detail'){ html = montarImpressaoPedido(); landscape = false; }
   else if(state.view==='pedidocompra-detail'){ html = montarImpressaoPedidoCompra(); landscape = true; }
   else if(state.view==='fatura-detail'){ html = montarImpressaoFatura(); landscape = true; }
+  else if(state.view==='ata-detail'){ html = montarImpressaoAta(); landscape = true; }
   if(!html){ toast('Não é possível imprimir nesta tela.', 'crit'); return; }
   document.getElementById('print-area').innerHTML = html;
   let pageStyle = document.getElementById('print-page-style');
@@ -5087,6 +5188,7 @@ async function abrirImpressao(){
   if(state.view==='pedido-detail') filename = montarPdfPedido(doc, left);
   else if(state.view==='pedidocompra-detail') filename = montarPdfPedidoCompra(doc, left);
   else if(state.view==='fatura-detail') filename = montarPdfFatura(doc, left);
+  else if(state.view==='ata-detail') filename = montarPdfAta(doc, left);
   if(!filename){ toast('Não é possível gerar PDF nesta tela.', 'crit'); return; }
   await salvarPdf(doc, filename, downloadsApi);
 }
