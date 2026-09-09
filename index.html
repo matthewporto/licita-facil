@@ -3386,9 +3386,6 @@ function openFinanceiroForm(existing, defaultAnoMes){
     const valorSemBase = document.getElementById('financeiro-valorsem-input').value;
     const valorAlteraBase = document.getElementById('financeiro-valoraltera-input').value;
     const valorPfBase = document.getElementById('financeiro-valorpf-input').value;
-    const tipo = valorAlteraBase!=='' ? 'valorAltera' : 'valorSemAlterar';
-    const label = tipo==='valorAltera' ? 'Altera o lucro' : 'Sem alterar o lucro';
-    const valorBase = tipo==='valorAltera' ? valorAlteraBase : valorSemBase;
     let rows = '';
     for(let i=2;i<=n;i++){
       const dataSugerida = dataBase ? addMonthsISO(dataBase, i-1) : '';
@@ -3398,17 +3395,18 @@ function openFinanceiroForm(existing, defaultAnoMes){
           <div class="field"><label>Vencimento</label>
             <input type="date" class="financeiro-parcela-data" value="${dataSugerida}">
           </div>
-          <div class="field"><label>${label} (R$)</label>
-            <input type="number" step="0.01" class="financeiro-parcela-valor" value="${valorBase}">
+          <div class="field"><label>Sem alterar o lucro (R$)</label>
+            <input type="number" step="0.01" class="financeiro-parcela-semalterar" value="${valorSemBase}">
           </div>
-          ${valorPfBase!==''?`
+          <div class="field"><label>Altera o lucro (R$)</label>
+            <input type="number" step="0.01" class="financeiro-parcela-altera" value="${valorAlteraBase}">
+          </div>
           <div class="field"><label>Pessoa física (R$)</label>
             <input type="number" step="0.01" class="financeiro-parcela-pf" value="${valorPfBase}">
-          </div>`:''}
+          </div>
         </div>`;
     }
     container.innerHTML = rows;
-    container.dataset.tipo = tipo;
     container.dataset.n = n;
   }
   if(numParcelasInput){
@@ -3438,20 +3436,19 @@ function openFinanceiroForm(existing, defaultAnoMes){
     const docs = [{ ...base, parcela: n>1?('1/'+n):(fd.get('parcela')||null) }];
     if(n>1){
       const container = document.getElementById('financeiro-parcelas-extra');
-      const tipo = container.dataset.tipo;
       const datas = [...container.querySelectorAll('.financeiro-parcela-data')];
-      const valores = [...container.querySelectorAll('.financeiro-parcela-valor')];
+      const sems = [...container.querySelectorAll('.financeiro-parcela-semalterar')];
+      const alteras = [...container.querySelectorAll('.financeiro-parcela-altera')];
       const pfs = [...container.querySelectorAll('.financeiro-parcela-pf')];
       for(let i=2;i<=n;i++){
         const idx = i-2;
-        const extra = {
+        docs.push({
           nf: base.nf, descricao: base.descricao, parcela: i+'/'+n,
           dataVencimento: datas[idx] ? datas[idx].value : '',
-          valorSemAlterar: null, valorAltera: null,
+          valorSemAlterar: (sems[idx] && sems[idx].value!=='') ? Number(sems[idx].value) : null,
+          valorAltera: (alteras[idx] && alteras[idx].value!=='') ? Number(alteras[idx].value) : null,
           valorPessoaFisica: (pfs[idx] && pfs[idx].value!=='') ? Number(pfs[idx].value) : null,
-        };
-        extra[tipo] = (valores[idx] && valores[idx].value!=='') ? Number(valores[idx].value) : null;
-        docs.push(extra);
+        });
       }
     }
     try{
