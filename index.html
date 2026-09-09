@@ -3148,7 +3148,7 @@ function financeiroDoMes(ano, mes){
   return state.financeiro.filter(f=>(f.dataVencimento||'').slice(0,7)===am);
 }
 function financeiroAlteraLucroDoMes(ano, mes){
-  return financeiroDoMes(ano, mes).filter(f=>Number(f.valorAltera)>0);
+  return financeiroDoMes(ano, mes).filter(f=>Number(f.valorAltera));
 }
 function financeiroAlteraLucroTotalMes(ano, mes){
   return financeiroAlteraLucroDoMes(ano, mes).reduce((s,f)=>s+(Number(f.valorAltera)||0),0);
@@ -5442,9 +5442,9 @@ function renderFinanceiro(){
               <td class="mono">${esc(f.nf)||'—'}</td>
               <td>${esc(f.descricao)}</td>
               <td>${esc(f.parcela)||'—'}</td>
-              <td class="num">${f.valorSemAlterar>0?fmtBRL(f.valorSemAlterar):'—'}</td>
-              <td class="num" style="${f.valorAltera>0?'color:var(--warn)':''}">${f.valorAltera>0?fmtBRL(f.valorAltera):'—'}</td>
-              <td class="num">${f.valorPessoaFisica>0?fmtBRL(f.valorPessoaFisica):'—'}</td>
+              <td class="num">${Number(f.valorSemAlterar)?fmtBRL(f.valorSemAlterar):'—'}</td>
+              <td class="num" style="${f.valorAltera>0?'color:var(--warn)':f.valorAltera<0?'color:var(--ok)':''}">${Number(f.valorAltera)?fmtBRL(f.valorAltera):'—'}</td>
+              <td class="num">${Number(f.valorPessoaFisica)?fmtBRL(f.valorPessoaFisica):'—'}</td>
               <td onclick="event.stopPropagation()">${podeEditar()?`<button class="icon-btn" onclick="deleteFinanceiro('${f.id}')">${ICONS.trash}</button>`:''}</td>
             </tr>`).join('')}
         </tbody>
