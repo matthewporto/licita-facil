@@ -3350,12 +3350,12 @@ function openFinanceiroForm(existing, defaultAnoMes){
             <input name="descricao" value="${esc(f.descricao)}" placeholder="Ex: Aluguel barracão, fornecedor, salário..." required>
           </div>
           <div class="field"><label>Parcela</label>
-            <input name="parcela" value="${esc(f.parcela)}" placeholder="Ex: Única, Mensal, Antecipado">
+            <input name="parcela" id="financeiro-parcela-input" value="${esc(f.parcela)}" placeholder="Ex: Única, Mensal, Antecipado">
           </div>
           ${existing?'':`
-          <div class="field"><label>Número de parcelas</label>
+          <div class="field"><label>Repetir por quantos meses</label>
             <input type="number" min="1" max="60" step="1" id="financeiro-num-parcelas" value="1">
-            <p style="font-size:.72rem;color:var(--ink-faint);margin:2px 0 0">Ex: 5 gera 1/5 a 5/5, uma por mês — data e valor de cada uma ficam editáveis abaixo.</p>
+            <p style="font-size:.72rem;color:var(--ink-faint);margin:2px 0 0" id="financeiro-num-parcelas-hint">Se a Parcela for "Mensal", repete o mesmo lançamento por N meses. Senão, gera 1/N, 2/N... — data e valor de cada mês ficam editáveis abaixo.</p>
           </div>`}
           <div class="field"><label>Sem alterar o lucro (R$)</label>
             <input type="number" step="0.01" name="valorSemAlterar" id="financeiro-valorsem-input" value="${f.valorSemAlterar??''}" placeholder="0,00">
@@ -3377,11 +3377,15 @@ function openFinanceiroForm(existing, defaultAnoMes){
     </div>`);
 
   const numParcelasInput = document.getElementById('financeiro-num-parcelas');
+  function ehParcelaMensal(){
+    return /^mensal$/i.test((document.getElementById('financeiro-parcela-input').value||'').trim());
+  }
   function gerarLinhasParcelas(){
     if(!numParcelasInput) return;
     const n = Math.max(1, Math.min(60, Number(numParcelasInput.value)||1));
     const container = document.getElementById('financeiro-parcelas-extra');
     if(n<=1){ container.innerHTML=''; container.dataset.n=1; return; }
+    const mensal = ehParcelaMensal();
     const dataBase = document.getElementById('financeiro-vencimento-input').value;
     const valorSemBase = document.getElementById('financeiro-valorsem-input').value;
     const valorAlteraBase = document.getElementById('financeiro-valoraltera-input').value;
@@ -3389,9 +3393,10 @@ function openFinanceiroForm(existing, defaultAnoMes){
     let rows = '';
     for(let i=2;i<=n;i++){
       const dataSugerida = dataBase ? addMonthsISO(dataBase, i-1) : '';
+      const rotulo = mensal ? `Mensal — mês ${i} de ${n}` : `Parcela ${i}/${n}`;
       rows += `
         <div class="field-grid" style="border-top:1px solid var(--line-soft); padding-top:12px; margin-top:12px">
-          <div style="grid-column:1/-1;font-size:.78rem;font-weight:600;color:var(--ink-soft)">Parcela ${i}/${n}</div>
+          <div style="grid-column:1/-1;font-size:.78rem;font-weight:600;color:var(--ink-soft)">${rotulo}</div>
           <div class="field"><label>Vencimento</label>
             <input type="date" class="financeiro-parcela-data" value="${dataSugerida}">
           </div>
@@ -3412,6 +3417,7 @@ function openFinanceiroForm(existing, defaultAnoMes){
   if(numParcelasInput){
     numParcelasInput.addEventListener('input', gerarLinhasParcelas);
     document.getElementById('financeiro-vencimento-input').addEventListener('change', gerarLinhasParcelas);
+    document.getElementById('financeiro-parcela-input').addEventListener('input', gerarLinhasParcelas);
   }
 
   document.getElementById('financeiro-form-submit').onclick = async ()=>{
@@ -3433,7 +3439,8 @@ function openFinanceiroForm(existing, defaultAnoMes){
       return;
     }
     const n = numParcelasInput ? Math.max(1, Math.min(60, Number(numParcelasInput.value)||1)) : 1;
-    const docs = [{ ...base, parcela: n>1?('1/'+n):(fd.get('parcela')||null) }];
+    const mensal = n>1 && ehParcelaMensal();
+    const docs = [{ ...base, parcela: mensal?'Mensal':(n>1?('1/'+n):(fd.get('parcela')||null)) }];
     if(n>1){
       const container = document.getElementById('financeiro-parcelas-extra');
       const datas = [...container.querySelectorAll('.financeiro-parcela-data')];
@@ -3443,7 +3450,7 @@ function openFinanceiroForm(existing, defaultAnoMes){
       for(let i=2;i<=n;i++){
         const idx = i-2;
         docs.push({
-          nf: base.nf, descricao: base.descricao, parcela: i+'/'+n,
+          nf: base.nf, descricao: base.descricao, parcela: mensal?'Mensal':(i+'/'+n),
           dataVencimento: datas[idx] ? datas[idx].value : '',
           valorSemAlterar: (sems[idx] && sems[idx].value!=='') ? Number(sems[idx].value) : null,
           valorAltera: (alteras[idx] && alteras[idx].value!=='') ? Number(alteras[idx].value) : null,
@@ -5470,6 +5477,16 @@ function renderCustosMinimos(){
     </div>`;
 }
 
+function financeiroMatchesQuery(f, q){
+  const partes = [
+    f.descricao, f.nf, f.parcela,
+    fmtDate(f.dataVencimento), f.dataVencimento,
+    f.valorSemAlterar!=null?String(f.valorSemAlterar):'', f.valorSemAlterar!=null?fmtBRL(f.valorSemAlterar):'',
+    f.valorAltera!=null?String(f.valorAltera):'', f.valorAltera!=null?fmtBRL(f.valorAltera):'',
+    f.valorPessoaFisica!=null?String(f.valorPessoaFisica):'', f.valorPessoaFisica!=null?fmtBRL(f.valorPessoaFisica):'',
+  ];
+  return partes.join(' ').toLowerCase().includes(q);
+}
 function financeiroTotaisLinhas(rows){
   const totalSem = rows.reduce((s,f)=>s+(Number(f.valorSemAlterar)||0),0);
   const totalAltera = rows.reduce((s,f)=>s+(Number(f.valorAltera)||0),0);
@@ -5526,7 +5543,7 @@ function renderFinanceiroMesDetail(){
   let rows = financeiroDoMes(ano, mes);
   if(state.financeiroSearch.trim()){
     const q = state.financeiroSearch.toLowerCase();
-    rows = rows.filter(f=> (f.descricao||'').toLowerCase().includes(q) || (f.nf||'').toLowerCase().includes(q));
+    rows = rows.filter(f=>financeiroMatchesQuery(f, q));
   }
   rows = [...rows].sort((a,b)=>(a.dataVencimento||'').localeCompare(b.dataVencimento||''));
   const totais = financeiroTotaisLinhas(financeiroDoMes(ano, mes));
@@ -5547,7 +5564,7 @@ function renderFinanceiroMesDetail(){
       <div class="kpi"><div class="label">Total geral</div><div class="value">${fmtBRL(totais.totalGeral)}</div></div>
     </div>
     <div class="toolbar">
-      <div class="search">${ICONS.search}<input placeholder="Buscar por razão/item ou NF..." value="${esc(state.financeiroSearch)}" oninput="state.financeiroSearch=this.value; render();"></div>
+      <div class="search">${ICONS.search}<input placeholder="Buscar por razão/item, NF, data ou valor..." value="${esc(state.financeiroSearch)}" oninput="state.financeiroSearch=this.value; render();"></div>
     </div>
     <div class="card">
       ${financeiroDoMes(ano,mes).length===0 ? `
