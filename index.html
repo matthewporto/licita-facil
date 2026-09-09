@@ -333,13 +333,13 @@ const state = {
   lembreteAlertaMostrado:false,
   mobileNavOpen:false,
   financeiroSearch:'',
-  financeiroMesFiltro:todayISO().slice(0,7),
   currentAtaId:null, currentItens:[],
   currentOrgaoId:null, currentLocaisEntrega:[],
   currentPedidoId:null, currentPedidoItens:[],
   currentPedidoCompraId:null, currentPedidoCompraItens:[],
   currentFaturaId:null, currentFaturaItens:[],
   lucroAno: new Date().getFullYear(), currentLucroAno:null, currentLucroMes:null,
+  financeiroAno: new Date().getFullYear(), currentFinanceiroAno:null, currentFinanceiroMes:null,
   search:'', statusFilter:'todas', empresaFilter:'todas',
   pedidoSearch:'', pedidoStatusFilter:'todas', pedidoEmpresaFilter:'todas', pedidosSelecionados: new Set(),
   pedidoCompraSearch:'', pedidoCompraStatusFilter:'todas',
@@ -359,6 +359,12 @@ function fmtBRL(n){ n=Number(n)||0; return n.toLocaleString('pt-BR',{style:'curr
 function fmtDate(iso){ if(!iso) return '—'; const [y,m,d]=iso.split('-'); if(!y) return iso; return `${d}/${m}/${y}`; }
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function daysUntil(iso){ if(!iso) return null; const a=new Date(todayISO()+'T00:00:00'); const b=new Date(iso+'T00:00:00'); return Math.round((b-a)/86400000); }
+function addMonthsISO(iso, months){
+  if(!iso) return '';
+  const d = new Date(iso+'T00:00:00');
+  d.setMonth(d.getMonth()+(Number(months)||0));
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 function addDaysISO(iso, days){
   if(!iso) return '';
   const d = new Date(iso+'T00:00:00');
@@ -526,6 +532,8 @@ function setView(view, opts){
   if(opts && opts.orgaoId!==undefined) state.currentOrgaoId = opts.orgaoId;
   if(opts && opts.ano!==undefined) state.currentLucroAno = opts.ano;
   if(opts && opts.mes!==undefined) state.currentLucroMes = opts.mes;
+  if(opts && opts.financeiroAno!==undefined) state.currentFinanceiroAno = opts.financeiroAno;
+  if(opts && opts.financeiroMes!==undefined) state.currentFinanceiroMes = opts.financeiroMes;
   if(view!=='ata-detail' && state.unsubItens){ state.unsubItens(); state.unsubItens=null; state.currentItens=[]; }
   if(view==='ata-detail') subscribeItens(state.currentAtaId);
   if(view!=='orgao-detail' && state.unsubLocaisEntrega){ state.unsubLocaisEntrega(); state.unsubLocaisEntrega=null; state.currentLocaisEntrega=[]; }
@@ -3321,8 +3329,9 @@ function openCustoMinimoForm(existing){
   };
 }
 
-function openFinanceiroForm(existing){
+function openFinanceiroForm(existing, defaultAnoMes){
   const f = existing || {};
+  const vencimentoDefault = f.dataVencimento || (defaultAnoMes ? defaultAnoMes+'-01' : '');
   openPanel(`
     <div class="panel">
       <div class="panel-header">
@@ -3331,8 +3340,8 @@ function openFinanceiroForm(existing){
       </div>
       <form id="financeiro-form" class="panel-body">
         <div class="field-grid">
-          <div class="field"><label>Vencimento</label>
-            <input type="date" name="dataVencimento" value="${esc(f.dataVencimento)}" required>
+          <div class="field"><label>Vencimento${existing?'':' (1ª parcela)'}</label>
+            <input type="date" name="dataVencimento" id="financeiro-vencimento-input" value="${esc(vencimentoDefault)}" required>
           </div>
           <div class="field"><label>NF</label>
             <input name="nf" value="${esc(f.nf)}" placeholder="Nº da nota (opcional)">
@@ -3341,39 +3350,116 @@ function openFinanceiroForm(existing){
             <input name="descricao" value="${esc(f.descricao)}" placeholder="Ex: Aluguel barracão, fornecedor, salário..." required>
           </div>
           <div class="field"><label>Parcela</label>
-            <input name="parcela" value="${esc(f.parcela)}" placeholder="Ex: Única, 1/5, Mensal, Antecipado">
+            <input name="parcela" value="${esc(f.parcela)}" placeholder="Ex: Única, Mensal, Antecipado">
           </div>
+          ${existing?'':`
+          <div class="field"><label>Número de parcelas</label>
+            <input type="number" min="1" max="60" step="1" id="financeiro-num-parcelas" value="1">
+            <p style="font-size:.72rem;color:var(--ink-faint);margin:2px 0 0">Ex: 5 gera 1/5 a 5/5, uma por mês — data e valor de cada uma ficam editáveis abaixo.</p>
+          </div>`}
           <div class="field"><label>Sem alterar o lucro (R$)</label>
-            <input type="number" min="0" step="0.01" name="valorSemAlterar" value="${f.valorSemAlterar??''}" placeholder="0,00">
+            <input type="number" step="0.01" name="valorSemAlterar" id="financeiro-valorsem-input" value="${f.valorSemAlterar??''}" placeholder="0,00">
           </div>
           <div class="field"><label>Altera o lucro (R$)</label>
-            <input type="number" min="0" step="0.01" name="valorAltera" value="${f.valorAltera??''}" placeholder="0,00">
+            <input type="number" step="0.01" name="valorAltera" id="financeiro-valoraltera-input" value="${f.valorAltera??''}" placeholder="0,00">
             <p style="font-size:.72rem;color:var(--ink-faint);margin:2px 0 0">Entra automaticamente nas despesas do mês em Lucro.</p>
           </div>
           <div class="field"><label>Pessoa física (R$)</label>
-            <input type="number" min="0" step="0.01" name="valorPessoaFisica" value="${f.valorPessoaFisica??''}" placeholder="0,00">
+            <input type="number" step="0.01" name="valorPessoaFisica" id="financeiro-valorpf-input" value="${f.valorPessoaFisica??''}" placeholder="0,00">
           </div>
         </div>
+        ${existing?'':'<div id="financeiro-parcelas-extra"></div>'}
       </form>
       <div class="panel-footer">
         <button class="btn btn-ghost" onclick="closePanel()">Cancelar</button>
         <button class="btn btn-primary" id="financeiro-form-submit">${existing?'Salvar':'Adicionar lançamento'}</button>
       </div>
     </div>`);
+
+  const numParcelasInput = document.getElementById('financeiro-num-parcelas');
+  function gerarLinhasParcelas(){
+    if(!numParcelasInput) return;
+    const n = Math.max(1, Math.min(60, Number(numParcelasInput.value)||1));
+    const container = document.getElementById('financeiro-parcelas-extra');
+    if(n<=1){ container.innerHTML=''; container.dataset.n=1; return; }
+    const dataBase = document.getElementById('financeiro-vencimento-input').value;
+    const valorSemBase = document.getElementById('financeiro-valorsem-input').value;
+    const valorAlteraBase = document.getElementById('financeiro-valoraltera-input').value;
+    const valorPfBase = document.getElementById('financeiro-valorpf-input').value;
+    const tipo = valorAlteraBase!=='' ? 'valorAltera' : 'valorSemAlterar';
+    const label = tipo==='valorAltera' ? 'Altera o lucro' : 'Sem alterar o lucro';
+    const valorBase = tipo==='valorAltera' ? valorAlteraBase : valorSemBase;
+    let rows = '';
+    for(let i=2;i<=n;i++){
+      const dataSugerida = dataBase ? addMonthsISO(dataBase, i-1) : '';
+      rows += `
+        <div class="field-grid" style="border-top:1px solid var(--line-soft); padding-top:12px; margin-top:12px">
+          <div style="grid-column:1/-1;font-size:.78rem;font-weight:600;color:var(--ink-soft)">Parcela ${i}/${n}</div>
+          <div class="field"><label>Vencimento</label>
+            <input type="date" class="financeiro-parcela-data" value="${dataSugerida}">
+          </div>
+          <div class="field"><label>${label} (R$)</label>
+            <input type="number" step="0.01" class="financeiro-parcela-valor" value="${valorBase}">
+          </div>
+          ${valorPfBase!==''?`
+          <div class="field"><label>Pessoa física (R$)</label>
+            <input type="number" step="0.01" class="financeiro-parcela-pf" value="${valorPfBase}">
+          </div>`:''}
+        </div>`;
+    }
+    container.innerHTML = rows;
+    container.dataset.tipo = tipo;
+    container.dataset.n = n;
+  }
+  if(numParcelasInput){
+    numParcelasInput.addEventListener('input', gerarLinhasParcelas);
+    document.getElementById('financeiro-vencimento-input').addEventListener('change', gerarLinhasParcelas);
+  }
+
   document.getElementById('financeiro-form-submit').onclick = async ()=>{
     const form = document.getElementById('financeiro-form');
     if(!form.reportValidity()) return;
+    if(!exigirPermissaoEdicao()) return;
     const fd = new FormData(form);
-    const data = {
+    const base = {
       dataVencimento: fd.get('dataVencimento'),
       nf: fd.get('nf') || null,
       descricao: fd.get('descricao'),
-      parcela: fd.get('parcela') || null,
       valorSemAlterar: fd.get('valorSemAlterar')===''?null:Number(fd.get('valorSemAlterar')),
       valorAltera: fd.get('valorAltera')===''?null:Number(fd.get('valorAltera')),
       valorPessoaFisica: fd.get('valorPessoaFisica')===''?null:Number(fd.get('valorPessoaFisica')),
     };
-    if(existing){ await updateFinanceiro(existing.id, data); } else { await createFinanceiro(data); }
+    if(existing){
+      await updateFinanceiro(existing.id, { ...base, parcela: fd.get('parcela')||null });
+      closePanel();
+      return;
+    }
+    const n = numParcelasInput ? Math.max(1, Math.min(60, Number(numParcelasInput.value)||1)) : 1;
+    const docs = [{ ...base, parcela: n>1?('1/'+n):(fd.get('parcela')||null) }];
+    if(n>1){
+      const container = document.getElementById('financeiro-parcelas-extra');
+      const tipo = container.dataset.tipo;
+      const datas = [...container.querySelectorAll('.financeiro-parcela-data')];
+      const valores = [...container.querySelectorAll('.financeiro-parcela-valor')];
+      const pfs = [...container.querySelectorAll('.financeiro-parcela-pf')];
+      for(let i=2;i<=n;i++){
+        const idx = i-2;
+        const extra = {
+          nf: base.nf, descricao: base.descricao, parcela: i+'/'+n,
+          dataVencimento: datas[idx] ? datas[idx].value : '',
+          valorSemAlterar: null, valorAltera: null,
+          valorPessoaFisica: (pfs[idx] && pfs[idx].value!=='') ? Number(pfs[idx].value) : null,
+        };
+        extra[tipo] = (valores[idx] && valores[idx].value!=='') ? Number(valores[idx].value) : null;
+        docs.push(extra);
+      }
+    }
+    try{
+      await Promise.all(docs.map(d=>state.db.collection('financeiro').add({...d, dataInclusao:new Date().toISOString()})));
+      toast(docs.length>1 ? docs.length+' parcelas cadastradas.' : 'Lançamento cadastrado.');
+    }catch(e){
+      toast('Não foi possível salvar: '+(e&&e.message?e.message:'erro desconhecido'), 'crit');
+    }
     closePanel();
   };
 }
@@ -5387,52 +5473,90 @@ function renderCustosMinimos(){
     </div>`;
 }
 
-function financeiroMesesDisponiveis(){
-  const set = new Set(state.financeiro.map(f=>(f.dataVencimento||'').slice(0,7)).filter(Boolean));
-  return [...set].sort();
-}
-function financeiroMesLabel(am){
-  const [ano,mes] = am.split('-');
-  return mesLabel(Number(mes))+'/'+ano;
+function financeiroTotaisLinhas(rows){
+  const totalSem = rows.reduce((s,f)=>s+(Number(f.valorSemAlterar)||0),0);
+  const totalAltera = rows.reduce((s,f)=>s+(Number(f.valorAltera)||0),0);
+  const totalPf = rows.reduce((s,f)=>s+(Number(f.valorPessoaFisica)||0),0);
+  return { totalSem, totalAltera, totalPf, totalGeral: totalSem+totalAltera };
 }
 function renderFinanceiro(){
-  let rows = state.financeiro;
-  if(state.financeiroMesFiltro!=='todos') rows = rows.filter(f=>(f.dataVencimento||'').slice(0,7)===state.financeiroMesFiltro);
+  const ano = state.financeiroAno;
+  const dadosMeses = Array.from({length:12}, (_,i)=>{
+    const mes = i+1;
+    const rows = financeiroDoMes(ano, mes);
+    return { mes, count: rows.length, ...financeiroTotaisLinhas(rows) };
+  });
+  const anual = financeiroTotaisLinhas(state.financeiro.filter(f=>(f.dataVencimento||'').slice(0,4)===String(ano)));
+  const mesAtualNum = (ano===new Date().getFullYear()) ? (new Date().getMonth()+1) : null;
+
+  return `
+    <div class="topbar">
+      <div><h1>Financeiro</h1><div class="sub">${state.financeiro.length} lançamento(s) cadastrado(s) no total</div></div>
+      <div class="actions">
+        <button class="btn btn-ghost btn-sm" onclick="state.financeiroAno=state.financeiroAno-1; render();">${ICONS.chevronLeft}</button>
+        <div class="btn btn-ghost btn-sm mono" style="pointer-events:none">${ano}</div>
+        <button class="btn btn-ghost btn-sm" onclick="state.financeiroAno=state.financeiroAno+1; render();">${ICONS.chevronRight}</button>
+        ${podeEditar()?`<button class="btn btn-primary" onclick="openFinanceiroForm()">${ICONS.plus}Novo lançamento</button>`:''}
+      </div>
+    </div>
+    <div class="kpi-row">
+      <div class="kpi"><div class="label">Sem alterar o lucro (${ano})</div><div class="value">${fmtBRL(anual.totalSem)}</div></div>
+      <div class="kpi"><div class="label">Altera o lucro (${ano})</div><div class="value ${anual.totalAltera?'warn':''}">${fmtBRL(anual.totalAltera)}</div></div>
+      <div class="kpi"><div class="label">Pessoa física (${ano})</div><div class="value">${fmtBRL(anual.totalPf)}</div></div>
+      <div class="kpi"><div class="label">Total geral (${ano})</div><div class="value">${fmtBRL(anual.totalGeral)}</div></div>
+    </div>
+    <div class="card">
+      <div class="table-wrap"><table>
+        <thead><tr><th>Mês</th><th>Lançamentos</th><th>Sem alterar</th><th>Altera o lucro</th><th>Pessoa física</th><th>Total geral</th></tr></thead>
+        <tbody>
+          ${dadosMeses.map(m=>`
+            <tr onclick="setView('financeiro-mes',{financeiroAno:${ano},financeiroMes:${m.mes}})">
+              <td>${mesLabel(m.mes)}${mesAtualNum===m.mes?' <span class="pill neutral" style="margin-left:4px">atual</span>':''}</td>
+              <td class="num">${m.count}</td>
+              <td class="num">${fmtBRL(m.totalSem)}</td>
+              <td class="num" style="${m.totalAltera?'color:var(--warn)':''}">${fmtBRL(m.totalAltera)}</td>
+              <td class="num">${fmtBRL(m.totalPf)}</td>
+              <td class="num" style="font-weight:600">${fmtBRL(m.totalGeral)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
+}
+
+function renderFinanceiroMesDetail(){
+  const ano = state.currentFinanceiroAno;
+  const mes = state.currentFinanceiroMes;
+  let rows = financeiroDoMes(ano, mes);
   if(state.financeiroSearch.trim()){
     const q = state.financeiroSearch.toLowerCase();
     rows = rows.filter(f=> (f.descricao||'').toLowerCase().includes(q) || (f.nf||'').toLowerCase().includes(q));
   }
   rows = [...rows].sort((a,b)=>(a.dataVencimento||'').localeCompare(b.dataVencimento||''));
-
-  const totalSem = rows.reduce((s,f)=>s+(Number(f.valorSemAlterar)||0),0);
-  const totalAltera = rows.reduce((s,f)=>s+(Number(f.valorAltera)||0),0);
-  const totalPf = rows.reduce((s,f)=>s+(Number(f.valorPessoaFisica)||0),0);
-  const totalGeral = totalSem + totalAltera;
-  const meses = financeiroMesesDisponiveis();
+  const totais = financeiroTotaisLinhas(financeiroDoMes(ano, mes));
 
   return `
     <div class="topbar">
-      <div><h1>Financeiro</h1><div class="sub">${state.financeiro.length} lançamento(s) cadastrado(s)</div></div>
-      <div class="actions">${podeEditar()?`<button class="btn btn-primary" onclick="openFinanceiroForm()">${ICONS.plus}Novo lançamento</button>`:''}</div>
+      <div>
+        <button class="btn btn-ghost btn-sm" style="margin-bottom:10px" onclick="setView('financeiro')">${ICONS.back} Voltar</button>
+        <h1>Financeiro — ${mesLabel(mes)} / ${ano}</h1>
+        <div class="sub">${financeiroDoMes(ano,mes).length} lançamento(s) neste mês</div>
+      </div>
+      <div class="actions">${podeEditar()?`<button class="btn btn-primary" onclick="openFinanceiroForm(null, '${anoMesStr(ano,mes)}')">${ICONS.plus}Novo lançamento</button>`:''}</div>
     </div>
     <div class="kpi-row">
-      <div class="kpi"><div class="label">Sem alterar o lucro</div><div class="value">${fmtBRL(totalSem)}</div></div>
-      <div class="kpi"><div class="label">Altera o lucro</div><div class="value ${totalAltera?'warn':''}">${fmtBRL(totalAltera)}</div></div>
-      <div class="kpi"><div class="label">Pessoa física</div><div class="value">${fmtBRL(totalPf)}</div></div>
-      <div class="kpi"><div class="label">Total geral</div><div class="value">${fmtBRL(totalGeral)}</div></div>
+      <div class="kpi"><div class="label">Sem alterar o lucro</div><div class="value">${fmtBRL(totais.totalSem)}</div></div>
+      <div class="kpi"><div class="label">Altera o lucro</div><div class="value ${totais.totalAltera?'warn':''}">${fmtBRL(totais.totalAltera)}</div></div>
+      <div class="kpi"><div class="label">Pessoa física</div><div class="value">${fmtBRL(totais.totalPf)}</div></div>
+      <div class="kpi"><div class="label">Total geral</div><div class="value">${fmtBRL(totais.totalGeral)}</div></div>
     </div>
     <div class="toolbar">
       <div class="search">${ICONS.search}<input placeholder="Buscar por razão/item ou NF..." value="${esc(state.financeiroSearch)}" oninput="state.financeiroSearch=this.value; render();"></div>
-      <select class="filter" onchange="state.financeiroMesFiltro=this.value; render();">
-        <option value="todos" ${state.financeiroMesFiltro==='todos'?'selected':''}>Todos os meses</option>
-        ${meses.map(am=>`<option value="${am}" ${state.financeiroMesFiltro===am?'selected':''}>${financeiroMesLabel(am)}</option>`).join('')}
-      </select>
     </div>
     <div class="card">
-      ${state.financeiro.length===0 ? `
-      <div class="empty"><h3>Nenhum lançamento cadastrado</h3><p>Cadastre as contas a pagar, no mesmo formato da sua planilha de controle financeiro.</p>
-        ${podeEditar()?`<button class="btn btn-primary" onclick="openFinanceiroForm()">${ICONS.plus}Novo lançamento</button>`:''}</div>
-      ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou o filtro de mês.</p></div>` : `
+      ${financeiroDoMes(ano,mes).length===0 ? `
+      <div class="empty"><h3>Nenhum lançamento neste mês</h3><p>Cadastre as contas a pagar com vencimento neste mês.</p>
+        ${podeEditar()?`<button class="btn btn-primary" onclick="openFinanceiroForm(null, '${anoMesStr(ano,mes)}')">${ICONS.plus}Novo lançamento</button>`:''}</div>
+      ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca.</p></div>` : `
       <div class="table-wrap"><table>
         <thead><tr><th>Vencimento</th><th>NF</th><th>Razão / Item</th><th>Parcela</th><th>Sem alterar</th><th>Altera o lucro</th><th>Pessoa física</th><th></th></tr></thead>
         <tbody>
@@ -5528,6 +5652,7 @@ function renderMain(){
   if(state.view==='custosminimos') return renderCustosMinimos();
   if(state.view==='lembretes') return renderLembretes();
   if(state.view==='financeiro') return renderFinanceiro();
+  if(state.view==='financeiro-mes') return renderFinanceiroMesDetail();
   if(state.view==='usuarios') return renderUsuarios();
   return '';
 }
