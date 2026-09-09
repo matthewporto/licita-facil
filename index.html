@@ -96,14 +96,25 @@ h1,h2,h3{ font-family:var(--font-display); font-weight:600; text-wrap:balance; m
 .mobile-topbar .brand-mobile{ font-family:var(--font-display); font-weight:700; font-size:1.1rem; }
 .icon-btn.sidebar-close-btn{ display:none; }
 
-.perm-table{ display:flex; flex-direction:column; gap:2px; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }
-.perm-row{ display:flex; flex-direction:column; gap:8px; padding:10px 12px; background:var(--surface); }
-.perm-row:nth-child(even){ background:var(--surface-2); }
-.perm-ver{ display:flex; align-items:center; gap:8px; cursor:pointer; font-size:.85rem; color:var(--ink); }
-.perm-ver input{ width:16px; height:16px; flex-shrink:0; }
-.perm-acoes{ display:flex; flex-wrap:wrap; gap:6px 14px; padding-left:24px; }
-.perm-acao-chk{ display:flex; align-items:center; gap:6px; cursor:pointer; font-size:.76rem; color:var(--ink-soft); white-space:nowrap; }
-.perm-acao-chk input{ width:14px; height:14px; flex-shrink:0; }
+.perm-table{ display:flex; flex-direction:column; gap:10px; }
+.perm-card{ border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; background:var(--surface); }
+.perm-card-head{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; background:var(--surface-2); border-bottom:1px solid var(--line); transition:.15s; }
+.perm-card.is-off .perm-card-head{ border-bottom-color:transparent; }
+.perm-card-name{ font-size:.86rem; font-weight:600; color:var(--ink); }
+.perm-switch{ position:relative; display:inline-flex; align-items:center; gap:8px; cursor:pointer; user-select:none; }
+.perm-switch-label{ font-size:.72rem; color:var(--ink-faint); }
+.perm-switch input{ position:absolute; opacity:0; width:0; height:0; }
+.perm-switch-track{ width:34px; height:20px; border-radius:999px; background:var(--line); transition:.15s; flex-shrink:0; position:relative; }
+.perm-switch-track::after{ content:''; position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:#fff; transition:.15s; box-shadow:0 1px 2px rgba(0,0,0,.25); }
+.perm-switch input:checked + .perm-switch-track{ background:var(--accent); }
+.perm-switch input:checked + .perm-switch-track::after{ transform:translateX(14px); }
+.perm-card-body{ padding:12px 14px; display:flex; flex-wrap:wrap; gap:8px; transition:opacity .15s; }
+.perm-card.is-off .perm-card-body{ opacity:.4; pointer-events:none; }
+.perm-chip{ display:inline-flex; align-items:center; gap:6px; padding:6px 12px 6px 10px; border-radius:999px; border:1px solid var(--line); background:var(--surface); font-size:.76rem; color:var(--ink-soft); cursor:pointer; user-select:none; white-space:nowrap; transition:.12s; }
+.perm-chip input{ position:absolute; opacity:0; width:0; height:0; }
+.perm-chip::before{ content:''; width:7px; height:7px; border-radius:50%; background:var(--line); flex-shrink:0; transition:.12s; }
+.perm-chip.active{ background:var(--accent-soft); border-color:var(--accent); color:var(--accent-strong); font-weight:600; }
+.perm-chip.active::before{ background:var(--accent); }
 .sidebar-backdrop{ display:none; }
 
 .main{ flex:1; min-width:0; padding:30px 40px 60px; }
@@ -3625,7 +3636,7 @@ function openUsuarioForm(existing){
     (MODULO_ACOES[m]||[]).forEach(a=>{ permAtuais[m][a] = !!existente[a]; });
   });
   openPanel(`
-    <div class="panel" style="width:min(640px,100%)">
+    <div class="panel" style="width:min(760px,100%)">
       <div class="panel-header">
         <h2>${existing?'Editar usuário':'Novo usuário'}</h2>
         <button class="icon-btn" onclick="closePanel()">${ICONS.close}</button>
@@ -3651,13 +3662,20 @@ function openUsuarioForm(existing){
         <p id="usuario-senha-erro" style="font-size:.8rem;color:var(--crit);min-height:1.2em;margin:8px 0 0"></p>
         <div class="field" style="margin-top:6px">
           <label>Permissões por módulo</label>
-          <p style="font-size:.72rem;color:var(--ink-faint);margin:2px 0 8px">Marque "Ver" para o módulo aparecer no menu deste usuário, e marque exatamente as ações que ele pode fazer nele.</p>
+          <p style="font-size:.72rem;color:var(--ink-faint);margin:2px 0 8px">Ligue "Ver módulo" para ele aparecer no menu deste usuário e escolha, em balões, exatamente as ações permitidas em cada um.</p>
           <div class="perm-table" id="usuario-perm-table">
             ${MODULOS_PERMISSAO.map(m=>`
-              <div class="perm-row" data-modulo="${m}">
-                <label class="perm-ver"><input type="checkbox" ${permAtuais[m].ver?'checked':''} onchange="alternarPermissaoVer('${m}', this.checked)"><strong>${esc(MODULOS_PERMISSAO_LABEL[m])}</strong></label>
-                <div class="perm-acoes">
-                  ${(MODULO_ACOES[m]||[]).map(a=>`<label class="perm-acao-chk"><input type="checkbox" ${permAtuais[m][a]?'checked':''} onchange="alternarPermissaoAcao('${m}','${a}', this.checked)">${esc(ACAO_LABEL[a]||a)}</label>`).join('')}
+              <div class="perm-card ${permAtuais[m].ver?'':'is-off'}" data-modulo="${m}">
+                <div class="perm-card-head">
+                  <span class="perm-card-name">${esc(MODULOS_PERMISSAO_LABEL[m])}</span>
+                  <label class="perm-switch">
+                    <span class="perm-switch-label">Ver módulo</span>
+                    <input type="checkbox" ${permAtuais[m].ver?'checked':''} onchange="alternarPermissaoVer('${m}', this.checked)">
+                    <span class="perm-switch-track"></span>
+                  </label>
+                </div>
+                <div class="perm-card-body">
+                  ${(MODULO_ACOES[m]||[]).map(a=>`<label class="perm-chip ${permAtuais[m][a]?'active':''}"><input type="checkbox" ${permAtuais[m][a]?'checked':''} onchange="alternarPermissaoAcao('${m}','${a}', this.checked, this.closest('.perm-chip'))">${esc(ACAO_LABEL[a]||a)}</label>`).join('')}
                 </div>
               </div>`).join('')}
           </div>
@@ -3697,17 +3715,30 @@ function openUsuarioForm(existing){
 }
 function alternarPermissaoVer(modulo, marcado){
   window.__usuarioPermSelecionadas[modulo].ver = marcado;
+  const card = document.querySelector(`.perm-card[data-modulo="${modulo}"]`);
+  if(card) card.classList.toggle('is-off', !marcado);
   if(!marcado){
     (MODULO_ACOES[modulo]||[]).forEach(a=>{ window.__usuarioPermSelecionadas[modulo][a] = false; });
-    document.querySelectorAll(`.perm-row[data-modulo="${modulo}"] .perm-acoes input[type=checkbox]`).forEach(el=>{ el.checked=false; });
+    if(card){
+      card.querySelectorAll('.perm-chip').forEach(chip=>{
+        chip.classList.remove('active');
+        const chk = chip.querySelector('input[type=checkbox]');
+        if(chk) chk.checked = false;
+      });
+    }
   }
 }
-function alternarPermissaoAcao(modulo, acao, marcado){
+function alternarPermissaoAcao(modulo, acao, marcado, chipEl){
   window.__usuarioPermSelecionadas[modulo][acao] = marcado;
+  if(chipEl) chipEl.classList.toggle('active', marcado);
   if(marcado && !window.__usuarioPermSelecionadas[modulo].ver){
     window.__usuarioPermSelecionadas[modulo].ver = true;
-    const verChk = document.querySelector(`.perm-row[data-modulo="${modulo}"] .perm-ver input[type=checkbox]`);
-    if(verChk) verChk.checked = true;
+    const card = document.querySelector(`.perm-card[data-modulo="${modulo}"]`);
+    if(card){
+      card.classList.remove('is-off');
+      const verChk = card.querySelector('.perm-switch input[type=checkbox]');
+      if(verChk) verChk.checked = true;
+    }
   }
 }
 
