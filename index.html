@@ -115,6 +115,7 @@ h1,h2,h3{ font-family:var(--font-display); font-weight:600; text-wrap:balance; m
 .kpi .value.warn{ color:var(--warn); } .kpi .value.crit{ color:var(--crit); } .kpi .value.ok{ color:var(--ok); }
 
 .section-title{ font-size:.98rem; margin:0 0 12px; display:flex; align-items:center; gap:10px; }
+.section-title svg{ width:16px; height:16px; flex-shrink:0; }
 .card{ background:var(--surface); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow-sm); }
 .card + .card{ margin-top:22px; }
 
@@ -277,6 +278,7 @@ const ICONS = {
   tag:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10.5 2.5h5a1 1 0 0 1 1 1v5a1 1 0 0 1-.3.7l-8 8a1 1 0 0 1-1.4 0l-5.7-5.7a1 1 0 0 1 0-1.4l8-8a1 1 0 0 1 .7-.3Z"/><circle cx="14" cy="6" r="1.2"/></svg>',
   users:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.2" cy="6.5" r="2.6"/><path d="M2.2 16.3c0-2.7 2.2-4.6 5-4.6s5 1.9 5 4.6"/><path d="M13 4.3c1.2.3 2.1 1.4 2.1 2.7 0 1.3-.9 2.4-2.1 2.7"/><path d="M14.2 11.9c1.9.5 3.6 2.1 3.6 4.4"/></svg>',
   bell:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 8.2a5 5 0 0 1 10 0c0 3.4 1.2 4.6 1.8 5.2a.7.7 0 0 1-.5 1.2H3.7a.7.7 0 0 1-.5-1.2c.6-.6 1.8-1.8 1.8-5.2Z"/><path d="M8.3 16.8a1.8 1.8 0 0 0 3.4 0"/></svg>',
+  check:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10.5 8 14.5 16 5.5"/></svg>',
   mail:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="4" width="15" height="12" rx="1.2"/><path d="M3 5.2 10 11l7-5.8"/></svg>',
   whatsapp:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 17 5 13.4A6.9 6.9 0 1 1 8 15.7Z"/><path d="M7.3 7.4c.2-.5.4-.5.6-.5h.4c.2 0 .4 0 .5.4.2.5.6 1.5.6 1.6.1.1.1.3 0 .4l-.4.5c-.1.1-.2.3-.1.5.3.5.7 1 1.2 1.4.5.4 1 .7 1.5.9.2.1.3.1.5-.1l.5-.6c.1-.2.3-.2.5-.1l1.4.7c.2.1.3.2.3.4 0 .6-.2 1.2-.7 1.5-.4.3-.9.5-1.4.4-1.2-.1-2.5-.7-3.5-1.6-1-.9-1.7-2-2-3.1-.1-.5 0-1 .3-1.5Z"/></svg>',
 };
@@ -312,6 +314,8 @@ const state = {
   atas:[], orgaos:[], pedidos:[], empresas:[], pedidosCompra:[], faturas:[], despesas:[], custosMinimos:[], usuarios:[], lembretes:[],
   custoMinimoSearch:'',
   lembreteSearch:'',
+  lembreteStatusFilter:'pendentes',
+  lembreteAlertaMostrado:false,
   currentAtaId:null, currentItens:[],
   currentOrgaoId:null, currentLocaisEntrega:[],
   currentPedidoId:null, currentPedidoItens:[],
@@ -483,6 +487,7 @@ function fazerLogout(){
   localStorage.removeItem('semfalta_sessao');
   [state.unsubAtas, state.unsubOrgaos, state.unsubPedidos, state.unsubEmpresas, state.unsubPedidosCompra, state.unsubFaturas, state.unsubDespesas, state.unsubCustosMinimos, state.unsubLembretes].forEach(u=>{ if(u) u(); });
   state.atas=[]; state.orgaos=[]; state.pedidos=[]; state.empresas=[]; state.pedidosCompra=[]; state.faturas=[]; state.despesas=[]; state.custosMinimos=[]; state.lembretes=[];
+  state.lembreteAlertaMostrado = false;
   state.autenticado = false;
   state.view = 'painel';
   render();
@@ -631,6 +636,11 @@ function subscribeLembretes(){
   if(state.unsubLembretes) state.unsubLembretes();
   state.unsubLembretes = state.db.collection('lembretes').onSnapshot(snap=>{
     state.lembretes = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    if(!state.lembreteAlertaMostrado){
+      state.lembreteAlertaMostrado = true;
+      const n = lembretesPendentesAtencao().length;
+      if(n>0) toast(n===1 ? '1 lembrete pedindo atenção.' : n+' lembretes pedindo atenção.', 'crit');
+    }
     render();
   }, err=>{ console.error(err); toast('Falha ao carregar lembretes.', 'crit'); });
 }
@@ -3022,8 +3032,23 @@ function lembreteDataHoraAviso(l){
   return l.dataAviso ? (l.dataAviso+'T'+(l.horarioAviso||'00:00')) : null;
 }
 function lembreteById(id){ return state.lembretes.find(l=>l.id===id); }
+function lembreteInicioJanelaAviso(l){
+  if(!l.dataAviso) return null;
+  const alvo = new Date(l.dataAviso+'T'+(l.horarioAviso||'00:00')+':00');
+  if(l.antecedenciaTipo==='diaInteiro') return new Date(l.dataAviso+'T00:00:00');
+  if(l.antecedenciaTipo==='horas') return new Date(alvo.getTime() - (Number(l.antecedenciaValor)||0)*3600000);
+  return new Date(alvo.getTime() - (Number(l.antecedenciaValor)||0)*60000);
+}
+function lembreteNaJanelaDeAviso(l){
+  if(!l.dataAviso || l.status==='Concluido' || l.status==='Cancelado') return false;
+  const inicio = lembreteInicioJanelaAviso(l);
+  return inicio!==null && new Date()>=inicio;
+}
+function lembretesPendentesAtencao(){
+  return state.lembretes.filter(lembreteNaJanelaDeAviso).sort((a,b)=>(lembreteDataHoraAviso(a)||'').localeCompare(lembreteDataHoraAviso(b)||''));
+}
 function lembreteStatusInfo(l){
-  if(l.status==='Enviado') return {texto:'Enviado', nivel:'ok'};
+  if(l.status==='Concluido') return {texto:'Concluído', nivel:'ok'};
   if(l.status==='Cancelado') return {texto:'Cancelado', nivel:'neutral'};
   const d = daysUntil(l.dataAviso);
   if(d===null) return {texto:'—', nivel:'neutral'};
@@ -3043,6 +3068,14 @@ async function createLembrete(data){
 async function updateLembrete(id, data){
   if(!exigirPermissaoEdicao()) return;
   await dbCall(state.db.doc('lembretes/'+id).update(data), 'Lembrete atualizado.');
+}
+async function marcarLembreteConcluido(id){
+  if(!exigirPermissaoEdicao()) return;
+  await dbCall(state.db.doc('lembretes/'+id).update({status:'Concluido'}), 'Lembrete marcado como concluído.');
+}
+async function reabrirLembrete(id){
+  if(!exigirPermissaoEdicao()) return;
+  await dbCall(state.db.doc('lembretes/'+id).update({status:'Pendente'}), 'Lembrete reaberto.');
 }
 async function deleteLembrete(id){
   if(!exigirPermissaoEdicao()) return;
@@ -3255,7 +3288,14 @@ function openLembreteForm(existing){
           <div class="field"><label>Horário do aviso</label>
             <input type="time" name="horarioAviso" value="${esc(l.horarioAviso||'09:00')}">
           </div>
-          ${existing?`<div class="field span2"><label>Data de inclusão</label><div class="readval">${l.dataInclusao?fmtDate(l.dataInclusao.slice(0,10))+' '+l.dataInclusao.slice(11,16):'—'}</div></div>`:''}
+          ${existing?`<div class="field"><label>Data de inclusão</label><div class="readval">${l.dataInclusao?fmtDate(l.dataInclusao.slice(0,10))+' '+l.dataInclusao.slice(11,16):'—'}</div></div>
+          <div class="field"><label>Situação</label>
+            <select name="status">
+              <option value="Pendente" ${(!l.status||l.status==='Pendente')?'selected':''}>Pendente</option>
+              <option value="Concluido" ${l.status==='Concluido'?'selected':''}>Concluído</option>
+              <option value="Cancelado" ${l.status==='Cancelado'?'selected':''}>Cancelado</option>
+            </select>
+          </div>`:''}
           <div class="field span2"><label>Avisar com antecedência</label>
             <select name="antecedenciaTipo" id="lembrete-antecedencia-tipo">
               <option value="minutos" ${tipo==='minutos'?'selected':''}>Tantos minutos antes</option>
@@ -3304,7 +3344,7 @@ function openLembreteForm(existing){
       canalEmail: fd.get('canalEmail')==='on',
       canalWhatsapp: fd.get('canalWhatsapp')==='on',
     };
-    if(existing){ await updateLembrete(existing.id, data); } else { await createLembrete(data); }
+    if(existing){ if(fd.get('status')) data.status = fd.get('status'); await updateLembrete(existing.id, data); } else { await createLembrete(data); }
     closePanel();
   };
 }
@@ -3398,7 +3438,7 @@ function renderSidebar(){
       </div>
       <div class="nav-group">
         <div class="nav-label">Lembretes</div>
-        ${item('lembretes','Lembretes',ICONS.bell, state.lembretes.length)}
+        ${item('lembretes','Lembretes',ICONS.bell, lembretesPendentesAtencao().length)}
       </div>
       <div class="nav-group">
         <div class="nav-label">Registro</div>
@@ -3451,6 +3491,7 @@ function renderPainel(){
   const saldoTotalEntregar = state.pedidos.reduce((s,p)=>s+(Number(pedidoSaldoEntregarCache(p))||0),0);
   const saldoTotalReceber = state.pedidosCompra.reduce((s,p)=>s+(Number(pedidoCompraSaldoReceberCache(p))||0),0);
   const saldoTotalFaturamento = state.faturas.reduce((s,f)=>s+(Number(faturaSaldoReceberCache(f))||0),0);
+  const lembretesAtencao = lembretesPendentesAtencao();
 
   return `
     <div class="topbar">
@@ -3471,6 +3512,25 @@ function renderPainel(){
       <div class="kpi"><div class="label">Saldo total a receber (compras)</div><div class="value ${saldoTotalReceber?'warn':''}">${fmtBRL(saldoTotalReceber)}</div></div>
       <div class="kpi"><div class="label">Faturas emitidas</div><div class="value">${state.faturas.length}</div></div>
       <div class="kpi"><div class="label">Saldo total a receber (faturamento)</div><div class="value ${saldoTotalFaturamento?'warn':''}">${fmtBRL(saldoTotalFaturamento)}</div></div>
+      <div class="kpi"><div class="label">Lembretes pendentes</div><div class="value ${lembretesAtencao.length?'crit':''}">${lembretesAtencao.length}</div></div>
+    </div>
+    <h3 class="section-title">${ICONS.bell} Lembretes que pedem atenção</h3>
+    <div class="card">
+      ${lembretesAtencao.length===0 ? `<div class="empty"><h3>Nenhum lembrete pedindo atenção agora</h3><p>Quando a data/antecedência de um lembrete chegar, ele aparece aqui.</p></div>` : `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Lembrete</th><th>Descrição</th><th>Data do aviso</th><th>Horário</th><th>Situação</th><th></th></tr></thead>
+        <tbody>
+          ${lembretesAtencao.map(l=>`
+            <tr onclick='openLembreteForm(${JSON.stringify(l).replace(/'/g,"&#39;")})'>
+              <td>${esc(l.titulo)}</td>
+              <td class="truncate">${esc(l.descricao)||'—'}</td>
+              <td>${fmtDate(l.dataAviso)}</td>
+              <td>${esc(l.horarioAviso)||'—'}</td>
+              <td>${lembreteStatusPill(l)}</td>
+              <td onclick="event.stopPropagation()">${podeEditar()?`<button class="icon-btn" title="Marcar como concluído" onclick="marcarLembreteConcluido('${l.id}')">${ICONS.check}</button>`:''}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table></div>`}
     </div>
     <h3 class="section-title">Vencimentos que pedem atenção</h3>
     <div class="card">
@@ -5193,6 +5253,8 @@ function renderCustosMinimos(){
 
 function renderLembretes(){
   let rows = state.lembretes;
+  if(state.lembreteStatusFilter==='pendentes') rows = rows.filter(l=>!l.status || l.status==='Pendente');
+  else if(state.lembreteStatusFilter!=='todos') rows = rows.filter(l=>l.status===state.lembreteStatusFilter);
   if(state.lembreteSearch.trim()){
     const q = state.lembreteSearch.toLowerCase();
     rows = rows.filter(l=> (l.titulo||'').toLowerCase().includes(q) || (l.descricao||'').toLowerCase().includes(q));
@@ -5206,12 +5268,18 @@ function renderLembretes(){
     </div>
     <div class="toolbar">
       <div class="search">${ICONS.search}<input id="lembrete-search-input" placeholder="Buscar por lembrete ou descrição..." value="${esc(state.lembreteSearch)}" oninput="state.lembreteSearch=this.value; render();"></div>
+      <select class="filter" onchange="state.lembreteStatusFilter=this.value; render();">
+        <option value="pendentes" ${state.lembreteStatusFilter==='pendentes'?'selected':''}>Pendentes</option>
+        <option value="Concluido" ${state.lembreteStatusFilter==='Concluido'?'selected':''}>Concluídos</option>
+        <option value="Cancelado" ${state.lembreteStatusFilter==='Cancelado'?'selected':''}>Cancelados</option>
+        <option value="todos" ${state.lembreteStatusFilter==='todos'?'selected':''}>Todos</option>
+      </select>
     </div>
     <div class="card">
       ${state.lembretes.length===0 ? `
       <div class="empty"><h3>Nenhum lembrete cadastrado</h3><p>Cadastre lembretes com data, horário e aviso por e-mail e/ou WhatsApp.</p>
         ${podeEditar()?`<button class="btn btn-primary" onclick="openLembreteForm()">${ICONS.plus}Novo lembrete</button>`:''}</div>
-      ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca.</p></div>` : `
+      ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou o filtro.</p></div>` : `
       <div class="table-wrap"><table>
         <thead><tr><th>Lembrete</th><th>Descrição</th><th>Data do aviso</th><th>Horário</th><th>Antecedência</th><th>Canais</th><th>Situação</th><th></th></tr></thead>
         <tbody>
@@ -5224,7 +5292,11 @@ function renderLembretes(){
               <td>${esc(antecedenciaTexto(l))}</td>
               <td>${[l.canalEmail?ICONS.mail:'', l.canalWhatsapp?ICONS.whatsapp:''].filter(Boolean).join(' ')||'—'}</td>
               <td>${lembreteStatusPill(l)}</td>
-              <td onclick="event.stopPropagation()">${podeEditar()?`<button class="icon-btn" onclick="deleteLembrete('${l.id}')">${ICONS.trash}</button>`:''}</td>
+              <td onclick="event.stopPropagation()" style="white-space:nowrap">
+                ${podeEditar()&&(!l.status||l.status==='Pendente')?`<button class="icon-btn" title="Marcar como concluído" onclick="marcarLembreteConcluido('${l.id}')">${ICONS.check}</button>`:''}
+                ${podeEditar()&&(l.status==='Concluido'||l.status==='Cancelado')?`<button class="icon-btn" title="Reabrir" onclick="reabrirLembrete('${l.id}')">${ICONS.back}</button>`:''}
+                ${podeEditar()?`<button class="icon-btn" onclick="deleteLembrete('${l.id}')">${ICONS.trash}</button>`:''}
+              </td>
             </tr>`).join('')}
         </tbody>
       </table></div>`}
