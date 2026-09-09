@@ -219,12 +219,34 @@ td.wrap-desc, .wrap-desc{ min-width:200px; max-width:320px; white-space:normal; 
   th{ color:#333 !important; }
   input, select{ border:none !important; background:none !important; box-shadow:none !important; padding:2px !important; }
 }
+
+#print-area{ display:none; }
+@media print{
+  body.printing-doc .app{ display:none !important; }
+  body.printing-doc #print-area{ display:block !important; }
+  #print-area *{ font-family: Helvetica, Arial, sans-serif; box-sizing:border-box; }
+  #print-area .doc-header{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14pt; }
+  #print-area .doc-title{ font-size:18pt; font-weight:bold; color:#141414; }
+  #print-area .doc-subtitle{ font-size:12pt; color:#464646; margin-top:4pt; }
+  #print-area .doc-header-right{ text-align:right; }
+  #print-area .doc-box{ margin-bottom:6pt; }
+  #print-area .doc-box .label{ display:block; font-size:7pt; color:#646464; text-transform:uppercase; letter-spacing:.03em; }
+  #print-area .doc-box b{ font-size:11pt; color:#141414; }
+  #print-area .doc-hr{ border:none; border-top:1px solid #d2d2d2; margin:10pt 0 16pt; }
+  #print-area .doc-fields{ margin-bottom:12pt; }
+  #print-area .doc-fields div{ font-size:9pt; margin-bottom:5pt; color:#141414; }
+  #print-area .doc-fields .label{ color:#646464; }
+  #print-area table{ width:100%; border-collapse:collapse; font-size:7pt; }
+  #print-area th, #print-area td{ border:1px solid #ccc; padding:3pt 4pt; text-align:left; }
+  #print-area th{ background:#ebebeb !important; color:#141414; font-weight:bold; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+}
 </style>
 
 <div class="app" id="app"></div>
 <div id="panel-root"></div>
 <div id="confirm-root"></div>
 <div id="toast-root"></div>
+<div id="print-area"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/4.2.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/5.0.8/jspdf.plugin.autotable.min.js"></script>
@@ -4353,9 +4375,152 @@ async function salvarPdf(doc, filename, downloadsApi){
   }
 }
 
+function htmlCamposImpressao(campos){
+  return '<div class="doc-fields">' + campos.map(([label,value])=>
+    '<div><span class="label">'+esc(label)+':</span> <b>'+esc(value===undefined||value===null||value===''?'—':String(value))+'</b></div>'
+  ).join('') + '</div>';
+}
+function htmlTabelaImpressao(colunas, linhas){
+  return '<table><thead><tr>'+colunas.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+
+    linhas.map(row=>'<tr>'+row.map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>').join('')+
+    '</tbody></table>';
+}
+
+function montarImpressaoPedido(){
+  const p = pedidoById(state.currentPedidoId);
+  if(!p) return null;
+  return montarImpressaoPedidoConteudo(p, state.currentPedidoItens);
+}
+
+function montarImpressaoPedidoConteudo(p, itens){
+  const cancelado = p.status==='Cancelado';
+  let valorTotalCalc=0, valorSeparadoCalc=0, valorEntregueCalc=0, lucroTotalCalc=0, valorComCustoCalc=0;
+  itens.forEach(it=>{
+    const qtd=Number(it.quantidade)||0, unit=Number(it.valorUnitario)||0, custo=Number(it.valorCusto)||0;
+    valorTotalCalc += qtd*unit;
+    valorSeparadoCalc += Math.min(Number(it.quantidadeSeparada)||0, qtd)*unit;
+    valorEntregueCalc += Math.min(Number(it.quantidadeEntregue)||0, qtd)*unit;
+    if(custo>0){ lucroTotalCalc += qtd*(unit-custo); valorComCustoCalc += qtd*unit; }
+  });
+  const saldoSeparar = cancelado?0:(valorTotalCalc-valorSeparadoCalc);
+  const saldoEntregar = cancelado?0:(valorTotalCalc-valorEntregueCalc);
+  const margemLucroCalc = valorComCustoCalc>0 ? (lucroTotalCalc/valorComCustoCalc*100) : null;
+
+  const localEntregaTexto = p.localEntregaNome
+    ? p.localEntregaNome + (p.localEntregaEndereco?' — '+p.localEntregaEndereco:'') + (p.localEntregaCidade?', '+p.localEntregaCidade+(p.localEntregaEstado?'/'+p.localEntregaEstado:''):'')
+    : '';
+  const ataDoPedido = ataById(p.ataId);
+  const campos = [['Empresa', ataDoPedido && ataDoPedido.empresaNome], ['Órgão', p.orgao], ['Ata/Contrato', p.ataNumero],
+   ['Ordem de compra', p.ordemCompra], ['Empenho', p.empenho], ['Local de entrega', localEntregaTexto], ['Status', STATUS_PEDIDO_LABEL[p.status]||p.status],
+   ['Valor total', pdfBRL(valorTotalCalc)], ['Saldo a separar', pdfBRL(saldoSeparar)], ['Saldo a entregar', pdfBRL(saldoEntregar)],
+   ['Margem de lucro', margemLucroCalc===null?'—':margemLucroCalc.toFixed(1)+'%']];
+
+  const colunas = ['Item','Lote','Descrição','Marca','Un.','Quantidade','Separada','Entregue','Saldo','Valor unit.','Valor de custo','Lucro','Margem','Subtotal'];
+  const linhas = ordenarPorNumeroItem(itens).map(it=>{
+    const qtd = Number(it.quantidade)||0;
+    const sep = cancelado?0:Math.min(Number(it.quantidadeSeparada)||0, qtd);
+    const ent = cancelado?0:Math.min(Number(it.quantidadeEntregue)||0, qtd);
+    const saldoItem = cancelado?0:(qtd-ent);
+    const unit = Number(it.valorUnitario)||0;
+    const custo = Number(it.valorCusto)||0;
+    const lucroUnit = unit-custo;
+    const margem = custo>0 ? (lucroUnit/unit*100) : null;
+    return [
+      it.numeroItem||'—', it.lote||'—', it.descricao||'', it.marca||'—', it.unidade||'—',
+      qtd, sep, ent, saldoItem, pdfBRL(unit), custo>0?pdfBRL(custo):'—', custo>0?pdfBRL(lucroUnit):'—', margem!==null?margem.toFixed(1)+'%':'—', pdfBRL(qtd*unit),
+    ];
+  });
+
+  const header = '<div class="doc-header">'
+    + '<div><div class="doc-title">'+esc(p.cidade||'—')+'</div><div class="doc-subtitle">'+esc(p.secretaria||'—')+'</div></div>'
+    + '<div class="doc-header-right">'
+      + '<div class="doc-box"><span class="label">DATA</span><b>'+esc(fmtDate(p.dataPedido)||'—')+'</b></div>'
+      + '<div class="doc-box"><span class="label">PRAZO DE ENTREGA</span><b>'+esc(p.dataLimiteEntrega?fmtDate(p.dataLimiteEntrega):'Sem prazo definido')+'</b></div>'
+    + '</div>'
+  + '</div><hr class="doc-hr">';
+  return header + htmlCamposImpressao(campos) + htmlTabelaImpressao(colunas, linhas);
+}
+
+function montarImpressaoPedidoCompra(){
+  const p = pedidoCompraById(state.currentPedidoCompraId);
+  if(!p) return null;
+  const itens = state.currentPedidoCompraItens;
+  const cancelado = p.status==='Cancelado';
+  let valorTotalCalc=0, valorRecebidoCalc=0;
+  itens.forEach(it=>{
+    const qtd=Number(it.quantidade)||0, unit=Number(it.valorUnitario)||0;
+    valorTotalCalc += qtd*unit;
+    valorRecebidoCalc += Math.min(Number(it.quantidadeRecebida)||0, qtd)*unit;
+  });
+  const saldoReceber = cancelado?0:(valorTotalCalc-valorRecebidoCalc);
+  const campos = [['Fornecedor', p.fornecedor], ['CNPJ do fornecedor', p.cnpjFornecedor], ['Ordem de compra', p.ordemCompra],
+   ['Status', STATUS_PEDIDO_COMPRA_LABEL[p.status]||p.status], ['Valor total', pdfBRL(valorTotalCalc)], ['Saldo a receber', pdfBRL(saldoReceber)]];
+  const colunas = ['Órgão','Secretaria','Ordem de compra','Empenho','Item','Lote','Descrição','Marca','Un.','Quantidade','Recebida','Saldo','Valor unit.','Subtotal'];
+  const linhas = itens.map(it=>{
+    const qtd = Number(it.quantidade)||0;
+    const rec = cancelado?0:Math.min(Number(it.quantidadeRecebida)||0, qtd);
+    const saldoItem = cancelado?0:(qtd-rec);
+    const unit = Number(it.valorUnitario)||0;
+    const origemP = it.origemPedidoId ? pedidoById(it.origemPedidoId) : null;
+    return [
+      (origemP&&origemP.orgao)||'—', (origemP&&origemP.secretaria)||'—', (origemP&&origemP.ordemCompra)||'—', (origemP&&origemP.empenho)||'—',
+      it.numeroItem||'—', it.lote||'—', it.descricao||'', it.marca||'—', it.unidade||'—',
+      qtd, rec, saldoItem, pdfBRL(unit), pdfBRL(qtd*unit),
+    ];
+  });
+  const header = '<div class="doc-title">Pedido de Compra — '+esc(fmtDate(p.dataPedido))+'</div>';
+  return header + htmlCamposImpressao(campos) + htmlTabelaImpressao(colunas, linhas);
+}
+
+function montarImpressaoFatura(){
+  const p = faturaById(state.currentFaturaId);
+  if(!p) return null;
+  const itens = state.currentFaturaItens;
+  const cancelada = p.status==='Cancelada';
+  let valorTotalCalc=0, lucroTotalCalc=0, valorComCustoCalc=0;
+  itens.forEach(it=>{
+    const qtd=Number(it.quantidade)||0, unit=Number(it.valorUnitario)||0, custo=Number(it.valorCusto)||0;
+    valorTotalCalc += qtd*unit;
+    if(custo>0){ lucroTotalCalc += qtd*(unit-custo); valorComCustoCalc += qtd*unit; }
+  });
+  const margemLucroCalc = valorComCustoCalc>0 ? (lucroTotalCalc/valorComCustoCalc*100) : null;
+  const valorPago = cancelada?0:Math.min(Number(p.valorPago)||0, valorTotalCalc);
+  const saldoReceber = cancelada?0:(valorTotalCalc-valorPago);
+  const campos = [['Data de emissão', fmtDate(p.dataEmissao)], ['Série', p.serieNota], ['Data de vencimento', fmtDate(p.dataVencimento)],
+   ['Status', STATUS_FATURA_LABEL[p.status]||p.status], ['Valor total', pdfBRL(valorTotalCalc)], ['Valor pago', pdfBRL(valorPago)],
+   ['Saldo a receber', pdfBRL(saldoReceber)], ['Margem de lucro', margemLucroCalc===null?'—':margemLucroCalc.toFixed(1)+'%']];
+  const colunas = ['Órgão','Secretaria','Ordem de compra','Empenho','Item','Lote','Descrição','Marca','Un.','Quantidade','Valor unit.','Valor de custo','Lucro','Margem','Subtotal'];
+  const linhas = itens.map(it=>{
+    const qtd = Number(it.quantidade)||0;
+    const unit = Number(it.valorUnitario)||0;
+    const custo = Number(it.valorCusto)||0;
+    const lucroUnit = unit-custo;
+    const margem = custo>0 ? (lucroUnit/unit*100) : null;
+    const origemP = it.origemPedidoId ? pedidoById(it.origemPedidoId) : null;
+    return [
+      (origemP&&origemP.orgao)||'—', (origemP&&origemP.secretaria)||'—', (origemP&&origemP.ordemCompra)||'—', (origemP&&origemP.empenho)||'—',
+      it.numeroItem||'—', it.lote||'—', it.descricao||'', it.marca||'—', it.unidade||'—',
+      qtd, pdfBRL(unit), custo>0?pdfBRL(custo):'—', custo>0?pdfBRL(lucroUnit):'—', margem!==null?margem.toFixed(1)+'%':'—', pdfBRL(qtd*unit),
+    ];
+  });
+  const header = '<div class="doc-title">Fatura — '+esc(p.numeroNota||'')+'</div>';
+  return header + htmlCamposImpressao(campos) + htmlTabelaImpressao(colunas, linhas);
+}
+
 function imprimirPagina(){
+  let html = null, landscape = true;
+  if(state.view==='pedido-detail'){ html = montarImpressaoPedido(); landscape = false; }
+  else if(state.view==='pedidocompra-detail'){ html = montarImpressaoPedidoCompra(); landscape = true; }
+  else if(state.view==='fatura-detail'){ html = montarImpressaoFatura(); landscape = true; }
+  if(!html){ toast('Não é possível imprimir nesta tela.', 'crit'); return; }
+  document.getElementById('print-area').innerHTML = html;
+  let pageStyle = document.getElementById('print-page-style');
+  if(!pageStyle){ pageStyle = document.createElement('style'); pageStyle.id = 'print-page-style'; document.head.appendChild(pageStyle); }
+  pageStyle.textContent = '@page{ size:'+(landscape?'landscape':'portrait')+'; margin:14mm; }';
+  document.body.classList.add('printing-doc');
   window.print();
 }
+window.addEventListener('afterprint', ()=>{ document.body.classList.remove('printing-doc'); });
 
 async function abrirImpressao(){
   const prep = await prepararPdf();
