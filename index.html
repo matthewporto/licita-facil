@@ -5421,8 +5421,8 @@ function renderLucroDetail(){
         <tbody>
           ${financeiroAltera.map(f=>`
             <tr onclick='openFinanceiroForm(${JSON.stringify(f).replace(/'/g,"&#39;")})'>
-              <td>${fmtDate(f.dataVencimento)}</td>
-              <td>${esc(f.descricao)}</td>
+              <td style="white-space:nowrap">${fmtDate(f.dataVencimento)}</td>
+              <td class="truncate">${esc(f.descricao)}</td>
               <td class="num">${fmtBRL(f.valorAltera)}</td>
             </tr>`).join('')}
         </tbody>
@@ -5576,10 +5576,10 @@ function renderFinanceiroMesDetail(){
         <tbody>
           ${rows.map(f=>`
             <tr onclick='openFinanceiroForm(${JSON.stringify(f).replace(/'/g,"&#39;")})'>
-              <td>${fmtDate(f.dataVencimento)}</td>
-              <td class="mono">${esc(f.nf)||'—'}</td>
-              <td>${esc(f.descricao)}</td>
-              <td>${esc(f.parcela)||'—'}</td>
+              <td style="white-space:nowrap">${fmtDate(f.dataVencimento)}</td>
+              <td class="mono truncate" style="max-width:110px">${esc(f.nf)||'—'}</td>
+              <td class="truncate">${esc(f.descricao)}</td>
+              <td style="white-space:nowrap">${esc(f.parcela)||'—'}</td>
               <td class="num">${Number(f.valorSemAlterar)?fmtBRL(f.valorSemAlterar):'—'}</td>
               <td class="num" style="${f.valorAltera>0?'color:var(--warn)':f.valorAltera<0?'color:var(--ok)':''}">${Number(f.valorAltera)?fmtBRL(f.valorAltera):'—'}</td>
               <td class="num">${Number(f.valorPessoaFisica)?fmtBRL(f.valorPessoaFisica):'—'}</td>
