@@ -276,6 +276,7 @@ td.wrap-desc, .wrap-desc{ min-width:200px; max-width:320px; white-space:normal; 
   #print-area table.doc-table-pedido{ font-size:10pt; }
   #print-area th, #print-area td{ border:1px solid #ccc; padding:3pt 4pt; text-align:left; }
   #print-area table.doc-table-pedido th, #print-area table.doc-table-pedido td{ padding:4pt 5pt; }
+  #print-area table.doc-table-pedido th:nth-child(3), #print-area table.doc-table-pedido td:nth-child(3){ width:34%; }
   #print-area th{ background:#ebebeb !important; color:#141414; font-weight:bold; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 }
 </style>
@@ -4952,19 +4953,13 @@ function montarImpressaoPedidoConteudo(p, itens){
    ['Valor total', pdfBRL(valorTotalCalc)], ['Saldo a separar', pdfBRL(saldoSeparar)], ['Saldo a entregar', pdfBRL(saldoEntregar)],
    ['Margem de lucro', margemLucroCalc===null?'—':margemLucroCalc.toFixed(1)+'%']];
 
-  const colunas = ['Item','Lote','Descrição','Marca','Un.','Quantidade','Separada','Entregue','Saldo','Valor unit.','Valor de custo','Lucro','Margem','Subtotal'];
+  const colunas = ['Item','Lote','Descrição','Marca','Un.','Quantidade','Valor unit.','Subtotal'];
   const linhas = ordenarPorNumeroItem(itens).map(it=>{
     const qtd = Number(it.quantidade)||0;
-    const sep = cancelado?0:Math.min(Number(it.quantidadeSeparada)||0, qtd);
-    const ent = cancelado?0:Math.min(Number(it.quantidadeEntregue)||0, qtd);
-    const saldoItem = cancelado?0:(qtd-ent);
     const unit = Number(it.valorUnitario)||0;
-    const custo = Number(it.valorCusto)||0;
-    const lucroUnit = unit-custo;
-    const margem = custo>0 ? (lucroUnit/unit*100) : null;
     return [
       it.numeroItem||'—', it.lote||'—', it.descricao||'', it.marca||'—', it.unidade||'—',
-      qtd, sep, ent, saldoItem, pdfBRL(unit), custo>0?pdfBRL(custo):'—', custo>0?pdfBRL(lucroUnit):'—', margem!==null?margem.toFixed(1)+'%':'—', pdfBRL(qtd*unit),
+      qtd, pdfBRL(unit), pdfBRL(qtd*unit),
     ];
   });
 
