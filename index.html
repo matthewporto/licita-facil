@@ -142,6 +142,8 @@ tbody tr{ cursor:pointer; }
 tbody tr:hover td{ background:var(--surface-2); }
 tbody tr:last-child td{ border-bottom:none; }
 td.num{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; text-align:right; }
+td.numc{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; text-align:center; }
+th.thc{ text-align:center; }
 td.truncate, .truncate{ max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 td.wrap-desc, .wrap-desc{ min-width:200px; max-width:320px; white-space:normal; word-break:break-word; }
 
@@ -5417,13 +5419,13 @@ function renderLucroDetail(){
     <div class="card">
       ${financeiroAltera.length===0 ? `<div class="empty"><h3>Nenhum lançamento do Financeiro neste mês</h3><p>Lançamentos marcados como "Altera o lucro" no Financeiro entram aqui automaticamente.</p></div>` : `
       <div class="table-wrap"><table>
-        <thead><tr><th>Vencimento</th><th>Razão / Item</th><th>Valor</th></tr></thead>
+        <thead><tr><th>Vencimento</th><th>Razão / Item</th><th class="thc">Valor</th></tr></thead>
         <tbody>
           ${financeiroAltera.map(f=>`
             <tr onclick='openFinanceiroForm(${JSON.stringify(f).replace(/'/g,"&#39;")})'>
               <td style="white-space:nowrap">${fmtDate(f.dataVencimento)}</td>
               <td class="truncate">${esc(f.descricao)}</td>
-              <td class="num">${fmtBRL(f.valorAltera)}</td>
+              <td class="numc">${fmtBRL(f.valorAltera)}</td>
             </tr>`).join('')}
         </tbody>
       </table></div>`}
@@ -5521,16 +5523,16 @@ function renderFinanceiro(){
     </div>
     <div class="card">
       <div class="table-wrap"><table>
-        <thead><tr><th>Mês</th><th>Lançamentos</th><th>Sem alterar</th><th>Altera o lucro</th><th>Pessoa física</th><th>Total geral</th></tr></thead>
+        <thead><tr><th>Mês</th><th class="thc">Lançamentos</th><th class="thc">Sem alterar</th><th class="thc">Altera o lucro</th><th class="thc">Pessoa física</th><th class="thc">Total geral</th></tr></thead>
         <tbody>
           ${dadosMeses.map(m=>`
             <tr onclick="setView('financeiro-mes',{financeiroAno:${ano},financeiroMes:${m.mes}})">
               <td>${mesLabel(m.mes)}${mesAtualNum===m.mes?' <span class="pill neutral" style="margin-left:4px">atual</span>':''}</td>
-              <td class="num">${m.count}</td>
-              <td class="num">${fmtBRL(m.totalSem)}</td>
-              <td class="num" style="${m.totalAltera?'color:var(--warn)':''}">${fmtBRL(m.totalAltera)}</td>
-              <td class="num">${fmtBRL(m.totalPf)}</td>
-              <td class="num" style="font-weight:600">${fmtBRL(m.totalGeral)}</td>
+              <td class="numc">${m.count}</td>
+              <td class="numc">${fmtBRL(m.totalSem)}</td>
+              <td class="numc" style="${m.totalAltera?'color:var(--warn)':''}">${fmtBRL(m.totalAltera)}</td>
+              <td class="numc">${fmtBRL(m.totalPf)}</td>
+              <td class="numc" style="font-weight:600">${fmtBRL(m.totalGeral)}</td>
             </tr>`).join('')}
         </tbody>
       </table></div>
@@ -5572,7 +5574,7 @@ function renderFinanceiroMesDetail(){
         ${podeEditar()?`<button class="btn btn-primary" onclick="openFinanceiroForm(null, '${anoMesStr(ano,mes)}')">${ICONS.plus}Novo lançamento</button>`:''}</div>
       ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca.</p></div>` : `
       <div class="table-wrap"><table>
-        <thead><tr><th>Vencimento</th><th>NF</th><th>Razão / Item</th><th>Parcela</th><th>Sem alterar</th><th>Altera o lucro</th><th>Pessoa física</th><th></th></tr></thead>
+        <thead><tr><th>Vencimento</th><th>NF</th><th>Razão / Item</th><th>Parcela</th><th class="thc">Sem alterar</th><th class="thc">Altera o lucro</th><th class="thc">Pessoa física</th><th></th></tr></thead>
         <tbody>
           ${rows.map(f=>`
             <tr onclick='openFinanceiroForm(${JSON.stringify(f).replace(/'/g,"&#39;")})'>
@@ -5580,9 +5582,9 @@ function renderFinanceiroMesDetail(){
               <td class="mono truncate" style="max-width:110px">${esc(f.nf)||'—'}</td>
               <td class="truncate">${esc(f.descricao)}</td>
               <td style="white-space:nowrap">${esc(f.parcela)||'—'}</td>
-              <td class="num">${Number(f.valorSemAlterar)?fmtBRL(f.valorSemAlterar):'—'}</td>
-              <td class="num" style="${f.valorAltera>0?'color:var(--warn)':f.valorAltera<0?'color:var(--ok)':''}">${Number(f.valorAltera)?fmtBRL(f.valorAltera):'—'}</td>
-              <td class="num">${Number(f.valorPessoaFisica)?fmtBRL(f.valorPessoaFisica):'—'}</td>
+              <td class="numc">${Number(f.valorSemAlterar)?fmtBRL(f.valorSemAlterar):'—'}</td>
+              <td class="numc" style="${f.valorAltera>0?'color:var(--warn)':f.valorAltera<0?'color:var(--ok)':''}">${Number(f.valorAltera)?fmtBRL(f.valorAltera):'—'}</td>
+              <td class="numc">${Number(f.valorPessoaFisica)?fmtBRL(f.valorPessoaFisica):'—'}</td>
               <td onclick="event.stopPropagation()">${podeEditar()?`<button class="icon-btn" onclick="deleteFinanceiro('${f.id}')">${ICONS.trash}</button>`:''}</td>
             </tr>`).join('')}
         </tbody>
