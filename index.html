@@ -276,6 +276,9 @@ const ICONS = {
   chevronRight:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M8 4.5 13.5 10 8 15.5"/></svg>',
   tag:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M10.5 2.5h5a1 1 0 0 1 1 1v5a1 1 0 0 1-.3.7l-8 8a1 1 0 0 1-1.4 0l-5.7-5.7a1 1 0 0 1 0-1.4l8-8a1 1 0 0 1 .7-.3Z"/><circle cx="14" cy="6" r="1.2"/></svg>',
   users:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7.2" cy="6.5" r="2.6"/><path d="M2.2 16.3c0-2.7 2.2-4.6 5-4.6s5 1.9 5 4.6"/><path d="M13 4.3c1.2.3 2.1 1.4 2.1 2.7 0 1.3-.9 2.4-2.1 2.7"/><path d="M14.2 11.9c1.9.5 3.6 2.1 3.6 4.4"/></svg>',
+  bell:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M5 8.2a5 5 0 0 1 10 0c0 3.4 1.2 4.6 1.8 5.2a.7.7 0 0 1-.5 1.2H3.7a.7.7 0 0 1-.5-1.2c.6-.6 1.8-1.8 1.8-5.2Z"/><path d="M8.3 16.8a1.8 1.8 0 0 0 3.4 0"/></svg>',
+  mail:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="4" width="15" height="12" rx="1.2"/><path d="M3 5.2 10 11l7-5.8"/></svg>',
+  whatsapp:'<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 17 5 13.4A6.9 6.9 0 1 1 8 15.7Z"/><path d="M7.3 7.4c.2-.5.4-.5.6-.5h.4c.2 0 .4 0 .5.4.2.5.6 1.5.6 1.6.1.1.1.3 0 .4l-.4.5c-.1.1-.2.3-.1.5.3.5.7 1 1.2 1.4.5.4 1 .7 1.5.9.2.1.3.1.5-.1l.5-.6c.1-.2.3-.2.5-.1l1.4.7c.2.1.3.2.3.4 0 .6-.2 1.2-.7 1.5-.4.3-.9.5-1.4.4-1.2-.1-2.5-.7-3.5-1.6-1-.9-1.7-2-2-3.1-.1-.5 0-1 .3-1.5Z"/></svg>',
 };
 
 const STATUS_ATA = ["Vigente","Encerrada","Em Renovacao","Suspensa","Cancelada"];
@@ -306,8 +309,9 @@ const NIVEIS_ACESSO_LEVEL = {"Administrador":"ok","Operador":"neutral","Visualiz
 const state = {
   db: null, dbReady:false, dbUnavailable:false,
   view:'painel',
-  atas:[], orgaos:[], pedidos:[], empresas:[], pedidosCompra:[], faturas:[], despesas:[], custosMinimos:[], usuarios:[],
+  atas:[], orgaos:[], pedidos:[], empresas:[], pedidosCompra:[], faturas:[], despesas:[], custosMinimos:[], usuarios:[], lembretes:[],
   custoMinimoSearch:'',
+  lembreteSearch:'',
   currentAtaId:null, currentItens:[],
   currentOrgaoId:null, currentLocaisEntrega:[],
   currentPedidoId:null, currentPedidoItens:[],
@@ -322,7 +326,7 @@ const state = {
   saldoPendenteSearch:'', saldoPendenteEmpresaFilter:'todas', saldoPendenteSelecaoFilter:'todos',
   saldoPendenteFaturamento:[], saldoPendenteFaturamentoLoaded:false, saldoPendenteFaturamentoLoading:false,
   saldoPendenteFaturamentoSearch:'', saldoPendenteFaturamentoEmpresaFilter:'todas', saldoPendenteFaturamentoSelecaoFilter:'todos',
-  unsubAtas:null, unsubOrgaos:null, unsubItens:null, unsubPedidos:null, unsubEmpresas:null, unsubPedidosCompra:null, unsubFaturas:null, unsubDespesas:null, unsubLocaisEntrega:null, unsubCustosMinimos:null, unsubUsuarios:null,
+  unsubAtas:null, unsubOrgaos:null, unsubItens:null, unsubPedidos:null, unsubEmpresas:null, unsubPedidosCompra:null, unsubFaturas:null, unsubDespesas:null, unsubLocaisEntrega:null, unsubCustosMinimos:null, unsubUsuarios:null, unsubLembretes:null,
   nome: localStorage.getItem('semfalta_nome') || '',
   autenticado: false,
 };
@@ -439,6 +443,7 @@ function iniciarModulosPosLogin(){
   subscribeFaturas();
   subscribeDespesas();
   subscribeCustosMinimos();
+  subscribeLembretes();
 }
 async function tentarLogin(){
   const nome = document.getElementById('login-nome-input').value.trim();
@@ -476,8 +481,8 @@ async function criarPrimeiroAdmin(){
 }
 function fazerLogout(){
   localStorage.removeItem('semfalta_sessao');
-  [state.unsubAtas, state.unsubOrgaos, state.unsubPedidos, state.unsubEmpresas, state.unsubPedidosCompra, state.unsubFaturas, state.unsubDespesas, state.unsubCustosMinimos].forEach(u=>{ if(u) u(); });
-  state.atas=[]; state.orgaos=[]; state.pedidos=[]; state.empresas=[]; state.pedidosCompra=[]; state.faturas=[]; state.despesas=[]; state.custosMinimos=[];
+  [state.unsubAtas, state.unsubOrgaos, state.unsubPedidos, state.unsubEmpresas, state.unsubPedidosCompra, state.unsubFaturas, state.unsubDespesas, state.unsubCustosMinimos, state.unsubLembretes].forEach(u=>{ if(u) u(); });
+  state.atas=[]; state.orgaos=[]; state.pedidos=[]; state.empresas=[]; state.pedidosCompra=[]; state.faturas=[]; state.despesas=[]; state.custosMinimos=[]; state.lembretes=[];
   state.autenticado = false;
   state.view = 'painel';
   render();
@@ -621,6 +626,13 @@ function subscribeCustosMinimos(){
     state.custosMinimos = snap.docs.map(d=>({id:d.id, ...d.data()}));
     render();
   }, err=>{ console.error(err); toast('Falha ao carregar custos/mínimos.', 'crit'); });
+}
+function subscribeLembretes(){
+  if(state.unsubLembretes) state.unsubLembretes();
+  state.unsubLembretes = state.db.collection('lembretes').onSnapshot(snap=>{
+    state.lembretes = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    render();
+  }, err=>{ console.error(err); toast('Falha ao carregar lembretes.', 'crit'); });
 }
 function subscribeUsuarios(){
   if(state.unsubUsuarios) state.unsubUsuarios();
@@ -3000,6 +3012,45 @@ async function deleteCustoMinimo(id){
   await dbCall(state.db.doc('custosMinimos/'+id).delete(), 'Item excluído.');
 }
 
+const ANTECEDENCIA_LABEL = { minutos:'minuto(s) antes', horas:'hora(s) antes', diaInteiro:'No dia (dia inteiro)' };
+function antecedenciaTexto(l){
+  if(l.antecedenciaTipo==='diaInteiro') return ANTECEDENCIA_LABEL.diaInteiro;
+  if(l.antecedenciaTipo==='horas') return (l.antecedenciaValor||0)+' '+ANTECEDENCIA_LABEL.horas;
+  return (l.antecedenciaValor||0)+' '+ANTECEDENCIA_LABEL.minutos;
+}
+function lembreteDataHoraAviso(l){
+  return l.dataAviso ? (l.dataAviso+'T'+(l.horarioAviso||'00:00')) : null;
+}
+function lembreteById(id){ return state.lembretes.find(l=>l.id===id); }
+function lembreteStatusInfo(l){
+  if(l.status==='Enviado') return {texto:'Enviado', nivel:'ok'};
+  if(l.status==='Cancelado') return {texto:'Cancelado', nivel:'neutral'};
+  const d = daysUntil(l.dataAviso);
+  if(d===null) return {texto:'—', nivel:'neutral'};
+  if(d<0) return {texto:'Atrasado '+Math.abs(d)+'d', nivel:'crit'};
+  if(d===0) return {texto:'Hoje', nivel:'warn'};
+  if(d===1) return {texto:'Amanhã', nivel:'warn'};
+  return {texto:'Em '+d+'d', nivel:'ok'};
+}
+function lembreteStatusPill(l){
+  const {texto, nivel} = lembreteStatusInfo(l);
+  return `<span class="pill ${nivel}">${esc(texto)}</span>`;
+}
+async function createLembrete(data){
+  if(!exigirPermissaoEdicao()) return;
+  await dbCall(state.db.collection('lembretes').add({...data, dataInclusao:new Date().toISOString(), status:'Pendente'}), 'Lembrete cadastrado.');
+}
+async function updateLembrete(id, data){
+  if(!exigirPermissaoEdicao()) return;
+  await dbCall(state.db.doc('lembretes/'+id).update(data), 'Lembrete atualizado.');
+}
+async function deleteLembrete(id){
+  if(!exigirPermissaoEdicao()) return;
+  const ok = await confirmDialog('Excluir este lembrete?');
+  if(!ok) return;
+  await dbCall(state.db.doc('lembretes/'+id).delete(), 'Lembrete excluído.');
+}
+
 function usuarioById(id){ return state.usuarios.find(u=>u.id===id); }
 async function createUsuario(data){
   if(!exigirPermissaoAdmin()) return;
@@ -3181,6 +3232,83 @@ function openCustoMinimoForm(existing){
   };
 }
 
+function openLembreteForm(existing){
+  const l = existing || {};
+  const tipo = l.antecedenciaTipo || 'minutos';
+  openPanel(`
+    <div class="panel">
+      <div class="panel-header">
+        <h2>${existing?'Editar lembrete':'Novo lembrete'}</h2>
+        <button class="icon-btn" onclick="closePanel()">${ICONS.close}</button>
+      </div>
+      <form id="lembrete-form" class="panel-body">
+        <div class="field-grid">
+          <div class="field span2"><label>Lembrete</label>
+            <input name="titulo" value="${esc(l.titulo)}" placeholder="Ex: Renovar certidão negativa" required>
+          </div>
+          <div class="field span2"><label>Descrição / Observação</label>
+            <textarea name="descricao" rows="3" placeholder="Do que se trata o lembrete?">${esc(l.descricao)}</textarea>
+          </div>
+          <div class="field"><label>Data do aviso</label>
+            <input type="date" name="dataAviso" value="${esc(l.dataAviso)}" required>
+          </div>
+          <div class="field"><label>Horário do aviso</label>
+            <input type="time" name="horarioAviso" value="${esc(l.horarioAviso||'09:00')}">
+          </div>
+          ${existing?`<div class="field span2"><label>Data de inclusão</label><div class="readval">${l.dataInclusao?fmtDate(l.dataInclusao.slice(0,10))+' '+l.dataInclusao.slice(11,16):'—'}</div></div>`:''}
+          <div class="field span2"><label>Avisar com antecedência</label>
+            <select name="antecedenciaTipo" id="lembrete-antecedencia-tipo">
+              <option value="minutos" ${tipo==='minutos'?'selected':''}>Tantos minutos antes</option>
+              <option value="horas" ${tipo==='horas'?'selected':''}>Tantas horas antes</option>
+              <option value="diaInteiro" ${tipo==='diaInteiro'?'selected':''}>No dia (dia inteiro)</option>
+            </select>
+          </div>
+          <div class="field" id="lembrete-antecedencia-valor-field" style="${tipo==='diaInteiro'?'display:none':''}">
+            <label id="lembrete-antecedencia-valor-label">${tipo==='horas'?'Quantas horas antes':'Quantos minutos antes'}</label>
+            <input type="number" min="1" step="1" name="antecedenciaValor" id="lembrete-antecedencia-valor" value="${l.antecedenciaValor||(tipo==='horas'?1:30)}">
+          </div>
+          <div class="field span2"><label>Enviar aviso por</label>
+            <div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap;padding-top:6px">
+              <label style="display:flex;align-items:center;gap:6px;font-weight:500;font-size:.85rem;text-transform:none;letter-spacing:normal;white-space:nowrap;color:var(--ink)"><input type="checkbox" name="canalEmail" ${l.canalEmail?'checked':''} style="width:16px;height:16px;flex-shrink:0">${ICONS.mail} E-mail</label>
+              <label style="display:flex;align-items:center;gap:6px;font-weight:500;font-size:.85rem;text-transform:none;letter-spacing:normal;white-space:nowrap;color:var(--ink)"><input type="checkbox" name="canalWhatsapp" ${l.canalWhatsapp?'checked':''} style="width:16px;height:16px;flex-shrink:0">${ICONS.whatsapp} WhatsApp</label>
+            </div>
+          </div>
+        </div>
+      </form>
+      <div class="panel-footer">
+        <button class="btn btn-ghost" onclick="closePanel()">Cancelar</button>
+        <button class="btn btn-primary" id="lembrete-form-submit">${existing?'Salvar':'Adicionar lembrete'}</button>
+      </div>
+    </div>`);
+  document.getElementById('lembrete-antecedencia-tipo').addEventListener('change', function(){
+    const campo = document.getElementById('lembrete-antecedencia-valor-field');
+    const label = document.getElementById('lembrete-antecedencia-valor-label');
+    if(this.value==='diaInteiro'){ campo.style.display='none'; }
+    else{
+      campo.style.display='';
+      label.textContent = this.value==='horas' ? 'Quantas horas antes' : 'Quantos minutos antes';
+    }
+  });
+  document.getElementById('lembrete-form-submit').onclick = async ()=>{
+    const form = document.getElementById('lembrete-form');
+    if(!form.reportValidity()) return;
+    const fd = new FormData(form);
+    const antecedenciaTipo = fd.get('antecedenciaTipo');
+    const data = {
+      titulo: fd.get('titulo'),
+      descricao: fd.get('descricao'),
+      dataAviso: fd.get('dataAviso'),
+      horarioAviso: fd.get('horarioAviso') || '09:00',
+      antecedenciaTipo,
+      antecedenciaValor: antecedenciaTipo==='diaInteiro' ? null : Number(fd.get('antecedenciaValor'))||0,
+      canalEmail: fd.get('canalEmail')==='on',
+      canalWhatsapp: fd.get('canalWhatsapp')==='on',
+    };
+    if(existing){ await updateLembrete(existing.id, data); } else { await createLembrete(data); }
+    closePanel();
+  };
+}
+
 function openUsuarioForm(existing){
   const u = existing || {};
   openPanel(`
@@ -3267,6 +3395,10 @@ function renderSidebar(){
       <div class="nav-group">
         <div class="nav-label">Sua empresa</div>
         ${item('empresas','Minhas Empresas',ICONS.briefcase, state.empresas.length)}
+      </div>
+      <div class="nav-group">
+        <div class="nav-label">Lembretes</div>
+        ${item('lembretes','Lembretes',ICONS.bell, state.lembretes.length)}
       </div>
       <div class="nav-group">
         <div class="nav-label">Registro</div>
@@ -5059,6 +5191,46 @@ function renderCustosMinimos(){
     </div>`;
 }
 
+function renderLembretes(){
+  let rows = state.lembretes;
+  if(state.lembreteSearch.trim()){
+    const q = state.lembreteSearch.toLowerCase();
+    rows = rows.filter(l=> (l.titulo||'').toLowerCase().includes(q) || (l.descricao||'').toLowerCase().includes(q));
+  }
+  rows = [...rows].sort((a,b)=>(lembreteDataHoraAviso(a)||'').localeCompare(lembreteDataHoraAviso(b)||''));
+
+  return `
+    <div class="topbar">
+      <div><h1>Lembretes</h1><div class="sub">${state.lembretes.length} lembrete(s) cadastrado(s)</div></div>
+      <div class="actions">${podeEditar()?`<button class="btn btn-primary" onclick="openLembreteForm()">${ICONS.plus}Novo lembrete</button>`:''}</div>
+    </div>
+    <div class="toolbar">
+      <div class="search">${ICONS.search}<input id="lembrete-search-input" placeholder="Buscar por lembrete ou descrição..." value="${esc(state.lembreteSearch)}" oninput="state.lembreteSearch=this.value; render();"></div>
+    </div>
+    <div class="card">
+      ${state.lembretes.length===0 ? `
+      <div class="empty"><h3>Nenhum lembrete cadastrado</h3><p>Cadastre lembretes com data, horário e aviso por e-mail e/ou WhatsApp.</p>
+        ${podeEditar()?`<button class="btn btn-primary" onclick="openLembreteForm()">${ICONS.plus}Novo lembrete</button>`:''}</div>
+      ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca.</p></div>` : `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Lembrete</th><th>Descrição</th><th>Data do aviso</th><th>Horário</th><th>Antecedência</th><th>Canais</th><th>Situação</th><th></th></tr></thead>
+        <tbody>
+          ${rows.map(l=>`
+            <tr onclick='openLembreteForm(${JSON.stringify(l).replace(/'/g,"&#39;")})'>
+              <td>${esc(l.titulo)}</td>
+              <td>${esc(l.descricao)||'—'}</td>
+              <td>${fmtDate(l.dataAviso)}</td>
+              <td>${esc(l.horarioAviso)||'—'}</td>
+              <td>${esc(antecedenciaTexto(l))}</td>
+              <td>${[l.canalEmail?ICONS.mail:'', l.canalWhatsapp?ICONS.whatsapp:''].filter(Boolean).join(' ')||'—'}</td>
+              <td>${lembreteStatusPill(l)}</td>
+              <td onclick="event.stopPropagation()">${podeEditar()?`<button class="icon-btn" onclick="deleteLembrete('${l.id}')">${ICONS.trash}</button>`:''}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table></div>`}
+    </div>`;
+}
+
 function renderMain(){
   if(state.dbUnavailable){
     return `<div class="empty"><h3>Não foi possível conectar ao banco de dados</h3><p>Verifique se as credenciais do Firebase (FIREBASE_CONFIG) foram preenchidas corretamente no código, e se o projeto Firebase está com Firestore e Autenticação anônima habilitados.</p></div>`;
@@ -5081,6 +5253,7 @@ function renderMain(){
   if(state.view==='orgao-detail') return renderOrgaoDetail();
   if(state.view==='empresas') return renderEmpresas();
   if(state.view==='custosminimos') return renderCustosMinimos();
+  if(state.view==='lembretes') return renderLembretes();
   if(state.view==='usuarios') return renderUsuarios();
   return '';
 }
