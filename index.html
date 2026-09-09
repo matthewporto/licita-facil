@@ -3407,9 +3407,9 @@ function openCustoMinimoForm(existing){
   };
 }
 
-function openFinanceiroForm(existing, defaultAnoMes){
+function openFinanceiroForm(existing){
   const f = existing || {};
-  const vencimentoDefault = f.dataVencimento || (defaultAnoMes ? defaultAnoMes+'-01' : '');
+  const vencimentoDefault = f.dataVencimento || todayISO();
   openPanel(`
     <div class="panel">
       <div class="panel-header">
@@ -5693,7 +5693,7 @@ function renderFinanceiroMesDetail(){
         <h1>Financeiro — ${mesLabel(mes)} / ${ano}</h1>
         <div class="sub">${financeiroDoMes(ano,mes).length} lançamento(s) neste mês</div>
       </div>
-      <div class="actions">${podeAcao('financeiro','criar')?`<button class="btn btn-primary" onclick="openFinanceiroForm(null, '${anoMesStr(ano,mes)}')">${ICONS.plus}Novo lançamento</button>`:''}</div>
+      <div class="actions">${podeAcao('financeiro','criar')?`<button class="btn btn-primary" onclick="openFinanceiroForm()">${ICONS.plus}Novo lançamento</button>`:''}</div>
     </div>
     <div class="kpi-row">
       <div class="kpi"><div class="label">Sem alterar o lucro</div><div class="value">${fmtBRL(totais.totalSem)}</div></div>
@@ -5707,7 +5707,7 @@ function renderFinanceiroMesDetail(){
     <div class="card">
       ${financeiroDoMes(ano,mes).length===0 ? `
       <div class="empty"><h3>Nenhum lançamento neste mês</h3><p>Cadastre as contas a pagar com vencimento neste mês.</p>
-        ${podeAcao('financeiro','criar')?`<button class="btn btn-primary" onclick="openFinanceiroForm(null, '${anoMesStr(ano,mes)}')">${ICONS.plus}Novo lançamento</button>`:''}</div>
+        ${podeAcao('financeiro','criar')?`<button class="btn btn-primary" onclick="openFinanceiroForm()">${ICONS.plus}Novo lançamento</button>`:''}</div>
       ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca.</p></div>` : `
       <div class="table-wrap"><table>
         <thead><tr><th>Vencimento</th><th>Empresa</th><th>NF</th><th>Razão / Item</th><th>Parcela</th><th class="thc">Sem alterar</th><th class="thc">Altera o lucro</th><th class="thc">Pessoa física</th><th></th></tr></thead>
