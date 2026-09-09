@@ -95,6 +95,17 @@ h1,h2,h3{ font-family:var(--font-display); font-weight:600; text-wrap:balance; m
 .mobile-topbar .hamburger-btn svg{ width:19px; height:19px; }
 .mobile-topbar .brand-mobile{ font-family:var(--font-display); font-weight:700; font-size:1.1rem; }
 .icon-btn.sidebar-close-btn{ display:none; }
+
+.perm-table{ display:flex; flex-direction:column; gap:2px; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; }
+.perm-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:9px 12px; background:var(--surface); }
+.perm-row:nth-child(even){ background:var(--surface-2); }
+.perm-row .perm-label{ font-size:.85rem; color:var(--ink); }
+.perm-group{ display:flex; gap:4px; flex-shrink:0; }
+.perm-btn{ all:unset; cursor:pointer; font-size:.72rem; font-weight:600; padding:5px 10px; border-radius:999px; background:var(--neutral-soft); color:var(--ink-faint); white-space:nowrap; }
+.perm-btn:hover{ filter:brightness(.96); }
+.perm-btn.active[data-nivel="nenhum"]{ background:var(--neutral-soft); color:var(--neutral); }
+.perm-btn.active[data-nivel="ver"]{ background:var(--warn-soft); color:var(--warn); }
+.perm-btn.active[data-nivel="editar"]{ background:var(--ok-soft); color:var(--ok); }
 .sidebar-backdrop{ display:none; }
 
 .main{ flex:1; min-width:0; padding:30px 40px 60px; }
@@ -321,9 +332,14 @@ const STATUS_FATURA = ["Emitida","Paga Parcial","Paga","Cancelada"];
 const STATUS_FATURA_LABEL = {"Emitida":"Emitida","Paga Parcial":"Paga Parcial","Paga":"Paga","Cancelada":"Cancelada"};
 const STATUS_FATURA_LEVEL = {"Emitida":"neutral","Paga Parcial":"warn","Paga":"ok","Cancelada":"crit"};
 
-const NIVEIS_ACESSO = ["Administrador","Operador","Visualizacao"];
-const NIVEIS_ACESSO_LABEL = {"Administrador":"Administrador","Operador":"Operador","Visualizacao":"Visualização"};
-const NIVEIS_ACESSO_LEVEL = {"Administrador":"ok","Operador":"neutral","Visualizacao":"warn"};
+const MODULOS_PERMISSAO = ["empresas","lembretes","atas","pedidos","pedidosCompra","faturamento","financeiro","lucro","orgaos","custosMinimos","usuarios"];
+const MODULOS_PERMISSAO_LABEL = {
+  empresas:"Minhas Empresas", lembretes:"Lembretes", atas:"Atas e Contratos", pedidos:"Pedidos",
+  pedidosCompra:"Pedidos de Compra", faturamento:"Faturamento", financeiro:"Financeiro", lucro:"Lucro",
+  orgaos:"Órgãos Públicos", custosMinimos:"Custo/Mínimo", usuarios:"Usuários",
+};
+const NIVEIS_PERMISSAO = ["nenhum","ver","editar"];
+const NIVEIS_PERMISSAO_LABEL = {nenhum:"Sem acesso", ver:"Ver", editar:"Editar"};
 
 const state = {
   db: null, dbReady:false, dbUnavailable:false,
@@ -429,21 +445,23 @@ function setNome(v){
 function usuarioAtual(){
   return state.usuarios.find(u=>(u.nome||'').trim().toLowerCase()===(state.nome||'').trim().toLowerCase());
 }
-function nivelAcessoAtual(){
+function permissaoModulo(modulo){
   const u = usuarioAtual();
-  return u ? (u.nivelAcesso||'Operador') : 'Administrador';
+  if(!u) return 'editar';
+  if(!u.permissoes && u.nivelAcesso==='Administrador') return 'editar';
+  const p = u.permissoes || {};
+  return p[modulo] || 'nenhum';
 }
-function podeEditar(){
-  return nivelAcessoAtual()!=='Visualizacao';
+function podeVerModulo(modulo){
+  return permissaoModulo(modulo)!=='nenhum';
 }
-function exigirPermissaoEdicao(){
-  if(podeEditar()) return true;
-  toast('Seu nível de acesso é Visualização — você não pode criar, editar ou excluir registros.', 'crit');
-  return false;
+function podeEditar(modulo){
+  if(!modulo) return false;
+  return permissaoModulo(modulo)==='editar';
 }
-function exigirPermissaoAdmin(){
-  if(nivelAcessoAtual()==='Administrador') return true;
-  toast('Somente um Administrador pode gerenciar usuários e níveis de acesso.', 'crit');
+function exigirPermissaoEdicao(modulo){
+  if(podeEditar(modulo)) return true;
+  toast('Você não tem permissão de edição em '+(MODULOS_PERMISSAO_LABEL[modulo]||'este módulo')+'.', 'crit');
   return false;
 }
 
@@ -499,8 +517,10 @@ async function criarPrimeiroAdmin(){
   if(senha!==confirmar){ if(erroEl) erroEl.textContent = 'As senhas não coincidem.'; return; }
   const salt = gerarSalt();
   const hash = await hashSenha(senha, salt);
+  const permissoesTotais = {};
+  MODULOS_PERMISSAO.forEach(m=>{ permissoesTotais[m] = 'editar'; });
   await state.db.collection('usuarios').add({
-    nome, email:'', telefone:'', nivelAcesso:'Administrador', senhaSalt:salt, senhaHash:hash,
+    nome, email:'', telefone:'', permissoes:permissoesTotais, senhaSalt:salt, senhaHash:hash,
     criadoEm: new Date().toISOString(),
   });
   localStorage.setItem('semfalta_sessao', nome);
@@ -524,7 +544,26 @@ function fazerLogout(){
 function toggleMobileNav(){ state.mobileNavOpen = !state.mobileNavOpen; render(); }
 function closeMobileNav(){ state.mobileNavOpen = false; render(); }
 
+const VIEW_MODULO = {
+  empresas:'empresas',
+  lembretes:'lembretes',
+  atas:'atas', 'ata-detail':'atas',
+  pedidos:'pedidos', 'pedido-detail':'pedidos',
+  pedidoscompra:'pedidosCompra', 'pedidocompra-detail':'pedidosCompra',
+  faturamento:'faturamento', 'fatura-detail':'faturamento',
+  financeiro:'financeiro', 'financeiro-mes':'financeiro',
+  lucro:'lucro', 'lucro-detail':'lucro',
+  orgaos:'orgaos', 'orgao-detail':'orgaos',
+  custosminimos:'custosMinimos',
+  usuarios:'usuarios',
+};
 function setView(view, opts){
+  const moduloAlvo = VIEW_MODULO[view];
+  if(moduloAlvo && !podeVerModulo(moduloAlvo)){
+    toast('Você não tem acesso a '+(MODULOS_PERMISSAO_LABEL[moduloAlvo]||'este módulo')+'.', 'crit');
+    view = 'painel';
+    opts = undefined;
+  }
   state.view = view;
   state.mobileNavOpen = false;
   if(opts && opts.ataId!==undefined) state.currentAtaId = opts.ataId;
@@ -773,7 +812,7 @@ function cidadesConhecidas(){
 }
 
 async function createAta(data){
-  if(!exigirPermissaoEdicao()) return null;
+  if(!exigirPermissaoEdicao('atas')) return null;
   const doc = await dbCall(state.db.collection('atas').add({
     ...data, valorTotal:0, valorUtilizado:0, lucroTotal:0, lucroUtilizado:0, itensCount:0, itensEsgotados:0,
     criadoPor: state.nome||'—', criadoEm: new Date().toISOString(),
@@ -781,11 +820,11 @@ async function createAta(data){
   return doc;
 }
 async function updateAtaFields(id, data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('atas')) return;
   await dbCall(state.db.doc('atas/'+id).update({ ...data, atualizadoPor: state.nome||'—', atualizadoEm: new Date().toISOString() }), 'Alterações salvas.');
 }
 async function deleteAta(id){
-  if(!exigirPermissaoEdicao()) return false;
+  if(!exigirPermissaoEdicao('atas')) return false;
   const ok = await confirmDialog('Excluir esta Ata/Contrato e todos os seus itens? Esta ação não pode ser desfeita.');
   if(!ok) return false;
   try{
@@ -797,17 +836,17 @@ async function deleteAta(id){
 }
 
 async function addItem(ataId, data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('atas')) return;
   await dbCall(state.db.collection('atas/'+ataId+'/itens').add(data), 'Item adicionado.');
   await recomputeAtaCache(ataId);
 }
 async function updateItem(ataId, itemId, data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('atas')) return;
   await dbCall(state.db.doc('atas/'+ataId+'/itens/'+itemId).update(data), 'Item atualizado.');
   await recomputeAtaCache(ataId);
 }
 async function deleteItem(ataId, itemId){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('atas')) return;
   const ok = await confirmDialog('Excluir este item?');
   if(!ok) return;
   await dbCall(state.db.doc('atas/'+ataId+'/itens/'+itemId).delete(), 'Item excluído.');
@@ -815,7 +854,7 @@ async function deleteItem(ataId, itemId){
 }
 
 async function importarItensAta(ataId, itens){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('atas')) return;
   for(const it of itens){
     await state.db.collection('atas/'+ataId+'/itens').add(it);
   }
@@ -952,7 +991,7 @@ async function lerPlanilhaComoLinhas(file){
 }
 function abrirImportarItensAta(ata){
   if(!ata) return;
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('atas')) return;
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = '.csv,.xlsx,.xls';
@@ -1050,7 +1089,7 @@ function wirePedidoDuplicadoCheck(input, field, excludeId){
 }
 
 async function createPedido(ata, itensSelecionados, meta){
-  if(!exigirPermissaoEdicao()) return null;
+  if(!exigirPermissaoEdicao('pedidos')) return null;
   const valorTotal = itensSelecionados.reduce((s,it)=>s+(Number(it.valorUnitario)||0)*(Number(it.quantidade)||0),0);
   const prazoEntregaDias = Number(ata.prazoEntregaDias)||0;
   const dataLimiteEntrega = prazoEntregaDias>0 ? addDaysISO(meta.dataPedido, prazoEntregaDias) : '';
@@ -1072,7 +1111,7 @@ async function createPedido(ata, itensSelecionados, meta){
 }
 
 async function deletePedido(pedido){
-  if(!exigirPermissaoEdicao()) return false;
+  if(!exigirPermissaoEdicao('pedidos')) return false;
   const ok = await confirmDialog('Excluir este pedido? A quantidade consumida na Ata será restituída.');
   if(!ok) return false;
   try{
@@ -1089,7 +1128,7 @@ async function deletePedido(pedido){
 }
 
 async function commitPedidoItemQuantity(pedido, pedidoItemId, field, el, maxQty){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('pedidos')) return;
   const value = Math.max(0, Math.min(Number(el.value)||0, maxQty));
   try{
     await state.db.doc('pedidos/'+pedido.id+'/itens/'+pedidoItemId).update({[field]: value});
@@ -1102,7 +1141,7 @@ async function commitPedidoItemQuantity(pedido, pedidoItemId, field, el, maxQty)
 
 async function updatePedidoStatus(pedido, newStatus){
   if(newStatus===pedido.status) return;
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('pedidos')) return;
   try{
     const itensSnap = await state.db.collection('pedidos/'+pedido.id+'/itens').get();
     const itensData = itensSnap.docs.map(d=>({id:d.id, ...d.data()}));
@@ -1127,7 +1166,7 @@ async function updatePedidoStatus(pedido, newStatus){
 }
 
 async function updatePedido(pedido, novosItens, meta){
-  if(!exigirPermissaoEdicao()) return false;
+  if(!exigirPermissaoEdicao('pedidos')) return false;
   try{
     const itensSnap = await state.db.collection('pedidos/'+pedido.id+'/itens').get();
     const itensAntigos = itensSnap.docs.map(d=>d.data());
@@ -1236,7 +1275,7 @@ function fornecedoresConhecidos(){
 }
 
 async function createPedidoCompra(itensSelecionados, meta){
-  if(!exigirPermissaoEdicao()) return null;
+  if(!exigirPermissaoEdicao('pedidosCompra')) return null;
   const valorTotal = itensSelecionados.reduce((s,it)=>s+(Number(it.valorUnitario)||0)*(Number(it.quantidade)||0),0);
   const doc = await dbCall(state.db.collection('pedidosCompra').add({
     ...meta, valorTotal,
@@ -1249,12 +1288,12 @@ async function createPedidoCompra(itensSelecionados, meta){
 }
 
 async function updatePedidoCompra(id, data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('pedidosCompra')) return;
   await dbCall(state.db.doc('pedidosCompra/'+id).update({ ...data, atualizadoPor: state.nome||'—', atualizadoEm: new Date().toISOString() }), 'Pedido de compra atualizado.');
 }
 
 async function deletePedidoCompra(id){
-  if(!exigirPermissaoEdicao()) return false;
+  if(!exigirPermissaoEdicao('pedidosCompra')) return false;
   const ok = await confirmDialog('Excluir este pedido de compra e todos os seus itens? O saldo pendente para comprar dos itens ligados a um Pedido volta a aparecer.');
   if(!ok) return false;
   try{
@@ -1351,7 +1390,7 @@ function toggleSelectAllSaldoPendenteFaturamento(checked){
 }
 
 async function createFatura(itensSelecionados, meta){
-  if(!exigirPermissaoEdicao()) return null;
+  if(!exigirPermissaoEdicao('faturamento')) return null;
   const valorTotal = itensSelecionados.reduce((s,it)=>s+(Number(it.valorUnitario)||0)*(Number(it.quantidade)||0),0);
   let lucroTotal=0, valorComCusto=0;
   itensSelecionados.forEach(it=>{
@@ -1373,7 +1412,7 @@ async function createFatura(itensSelecionados, meta){
 }
 
 async function updateFatura(id, data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('faturamento')) return;
   await dbCall(state.db.doc('faturas/'+id).update({ ...data, atualizadoPor: state.nome||'—', atualizadoEm: new Date().toISOString() }), 'Fatura atualizada.');
 }
 
@@ -1393,7 +1432,7 @@ async function revertEstadoAnteriorPedido(pedidoId, estadoAnterior){
 }
 
 async function deleteFatura(id){
-  if(!exigirPermissaoEdicao()) return false;
+  if(!exigirPermissaoEdicao('faturamento')) return false;
   const fatura = faturaById(id);
   const temEstadoAnterior = !!(fatura && fatura.estadoAnteriorPedido && fatura.estadoAnteriorPedidoId);
   const statusAnteriorLabel = temEstadoAnterior ? (STATUS_PEDIDO_LABEL[fatura.estadoAnteriorPedido.status]||fatura.estadoAnteriorPedido.status) : '';
@@ -1413,15 +1452,15 @@ async function deleteFatura(id){
 function orgaoById(id){ return state.orgaos.find(o=>o.id===id); }
 function orgaoByNome(nome){ return state.orgaos.find(o=>(o.nome||'').trim().toLowerCase()===(nome||'').trim().toLowerCase()); }
 async function createOrgao(data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('orgaos')) return;
   await dbCall(state.db.collection('orgaos').add(data), 'Órgão cadastrado.');
 }
 async function updateOrgao(id, data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('orgaos')) return;
   await dbCall(state.db.doc('orgaos/'+id).update(data), 'Órgão atualizado.');
 }
 async function deleteOrgao(id){
-  if(!exigirPermissaoEdicao()) return false;
+  if(!exigirPermissaoEdicao('orgaos')) return false;
   const ok = await confirmDialog('Excluir este órgão e todos os locais de entrega cadastrados? Esta ação não pode ser desfeita.');
   if(!ok) return false;
   try{
@@ -1436,15 +1475,15 @@ async function handleDeleteOrgao(id){
   if(ok) setView('orgaos');
 }
 async function addLocalEntrega(orgaoId, data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('orgaos')) return;
   await dbCall(state.db.collection('orgaos/'+orgaoId+'/locaisEntrega').add(data), 'Local de entrega adicionado.');
 }
 async function updateLocalEntrega(orgaoId, localId, data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('orgaos')) return;
   await dbCall(state.db.doc('orgaos/'+orgaoId+'/locaisEntrega/'+localId).update(data), 'Local de entrega atualizado.');
 }
 async function deleteLocalEntrega(orgaoId, localId){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('orgaos')) return;
   const ok = await confirmDialog('Excluir este local de entrega?');
   if(!ok) return;
   await dbCall(state.db.doc('orgaos/'+orgaoId+'/locaisEntrega/'+localId).delete(), 'Local de entrega excluído.');
@@ -1453,15 +1492,15 @@ async function deleteLocalEntrega(orgaoId, localId){
 function empresaById(id){ return state.empresas.find(e=>e.id===id); }
 
 async function createEmpresa(data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('empresas')) return;
   await dbCall(state.db.collection('empresas').add(data), 'Empresa cadastrada.');
 }
 async function updateEmpresa(id, data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('empresas')) return;
   await dbCall(state.db.doc('empresas/'+id).update(data), 'Empresa atualizada.');
 }
 async function deleteEmpresa(id){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('empresas')) return;
   const emVinculada = state.atas.some(a=>a.empresaId===id);
   if(emVinculada){
     toast('Esta empresa está vinculada a Atas/Contratos e não pode ser excluída.', 'crit');
@@ -2068,7 +2107,7 @@ async function reconciliarPedidoAposRecebimento(pedidoId){
 }
 
 async function commitPedidoCompraItemQuantity(pedidoCompra, itemId, el, maxQty){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('pedidosCompra')) return;
   const value = Math.max(0, Math.min(Number(el.value)||0, maxQty));
   try{
     const itemAntes = state.currentPedidoCompraItens.find(x=>x.id===itemId) || {};
@@ -2088,7 +2127,7 @@ async function commitPedidoCompraItemQuantity(pedidoCompra, itemId, el, maxQty){
 
 async function updatePedidoCompraStatus(pedidoCompra, newStatus){
   if(newStatus===pedidoCompra.status) return;
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('pedidosCompra')) return;
   try{
     const itensSnap = await state.db.collection('pedidosCompra/'+pedidoCompra.id+'/itens').get();
     const chaves = [];
@@ -2119,7 +2158,7 @@ function statusValorPagoOverride(status, valorTotal){
 }
 
 async function commitFaturaValorPago(fatura, el){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('faturamento')) return;
   const valorTotal = Number(fatura.valorTotal)||0;
   const value = Math.max(0, Math.min(Number(el.value)||0, valorTotal));
   try{
@@ -2131,7 +2170,7 @@ async function commitFaturaValorPago(fatura, el){
 
 async function updateFaturaStatus(fatura, newStatus){
   if(newStatus===fatura.status) return;
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('faturamento')) return;
   try{
     const valorTotal = Number(fatura.valorTotal)||0;
     const override = statusValorPagoOverride(newStatus, valorTotal);
@@ -2354,7 +2393,7 @@ function openPedidoCompraEditForm(pc){
 }
 
 async function finalizarStatusPedido(pedido, novoStatus, successMsg){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('pedidos')) return;
   if(novoStatus!==pedido.status){
     await dbCall(state.db.doc('pedidos/'+pedido.id).update({
       status: novoStatus, atualizadoPor: state.nome||'—', atualizadoEm: new Date().toISOString(),
@@ -2418,7 +2457,7 @@ async function openSepararPedidoForm(pedido){
   });
 
   document.getElementById('separar-pedido-submit').onclick = async ()=>{
-    if(!exigirPermissaoEdicao()) return;
+    if(!exigirPermissaoEdicao('pedidos')) return;
     try{
       const inputs = Array.from(document.querySelectorAll('.separar-qtd-input'));
       let totalQtd=0, totalSep=0;
@@ -2520,7 +2559,7 @@ async function openFaturarPedidoForm(pedido){
     </div>`);
 
   document.getElementById('faturar-pedido-submit').onclick = async ()=>{
-    if(!exigirPermissaoEdicao()) return;
+    if(!exigirPermissaoEdicao('pedidos')) return;
     const form = document.getElementById('faturar-pedido-form');
     if(!form.reportValidity()) return;
     const inputs = Array.from(document.querySelectorAll('.faturar-qtd-input'));
@@ -2987,7 +3026,7 @@ function pedidoCompraOrigemPedido(pc){
 
 function pedidoCompraStatusPillSelect(p){
   const level = STATUS_PEDIDO_COMPRA_LEVEL[p.status]||'neutral';
-  if(!podeEditar()) return `<span class="pill ${level}">${esc(STATUS_PEDIDO_COMPRA_LABEL[p.status]||p.status)}</span>`;
+  if(!podeEditar('pedidosCompra')) return `<span class="pill ${level}">${esc(STATUS_PEDIDO_COMPRA_LABEL[p.status]||p.status)}</span>`;
   return `<select class="pill-select ${level}" onclick="event.stopPropagation()" onchange="event.stopPropagation(); updatePedidoCompraStatus(pedidoCompraById('${p.id}'), this.value)">
     ${STATUS_PEDIDO_COMPRA.map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${STATUS_PEDIDO_COMPRA_LABEL[s]}</option>`).join('')}
   </select>`;
@@ -3003,18 +3042,18 @@ function faturaOrigemPedido(f){
 }
 
 async function createDespesa(data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('lucro')) return;
   await dbCall(state.db.collection('despesas').add({
     ...data, valor: Number(data.valor)||0,
     criadoPor: state.nome||'—', criadoEm: new Date().toISOString(),
   }), 'Despesa registrada.');
 }
 async function updateDespesa(id, data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('lucro')) return;
   await dbCall(state.db.doc('despesas/'+id).update({ ...data, valor: Number(data.valor)||0 }), 'Despesa atualizada.');
 }
 async function deleteDespesa(id){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('lucro')) return;
   const ok = await confirmDialog('Excluir esta despesa?');
   if(!ok) return;
   await dbCall(state.db.doc('despesas/'+id).delete(), 'Despesa excluída.');
@@ -3049,15 +3088,15 @@ function minimoUnitarioValor(c){
   return custoUnit*(1+pctLogistica/100)*(1+margemVendaValor(c)/100);
 }
 async function createCustoMinimo(data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('custosMinimos')) return;
   await dbCall(state.db.collection('custosMinimos').add(data), 'Item cadastrado.');
 }
 async function updateCustoMinimo(id, data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('custosMinimos')) return;
   await dbCall(state.db.doc('custosMinimos/'+id).update(data), 'Item atualizado.');
 }
 async function deleteCustoMinimo(id){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('custosMinimos')) return;
   const ok = await confirmDialog('Excluir este item do cadastro de Custo/Mínimo?');
   if(!ok) return;
   await dbCall(state.db.doc('custosMinimos/'+id).delete(), 'Item excluído.');
@@ -3103,23 +3142,23 @@ function lembreteStatusPill(l){
   return `<span class="pill ${nivel}">${esc(texto)}</span>`;
 }
 async function createLembrete(data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('lembretes')) return;
   await dbCall(state.db.collection('lembretes').add({...data, dataInclusao:new Date().toISOString(), status:'Pendente'}), 'Lembrete cadastrado.');
 }
 async function updateLembrete(id, data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('lembretes')) return;
   await dbCall(state.db.doc('lembretes/'+id).update(data), 'Lembrete atualizado.');
 }
 async function marcarLembreteConcluido(id){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('lembretes')) return;
   await dbCall(state.db.doc('lembretes/'+id).update({status:'Concluido'}), 'Lembrete marcado como concluído.');
 }
 async function reabrirLembrete(id){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('lembretes')) return;
   await dbCall(state.db.doc('lembretes/'+id).update({status:'Pendente'}), 'Lembrete reaberto.');
 }
 async function deleteLembrete(id){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('lembretes')) return;
   const ok = await confirmDialog('Excluir este lembrete?');
   if(!ok) return;
   await dbCall(state.db.doc('lembretes/'+id).delete(), 'Lembrete excluído.');
@@ -3127,15 +3166,15 @@ async function deleteLembrete(id){
 
 function usuarioById(id){ return state.usuarios.find(u=>u.id===id); }
 async function createUsuario(data){
-  if(!exigirPermissaoAdmin()) return;
+  if(!exigirPermissaoEdicao('usuarios')) return;
   await dbCall(state.db.collection('usuarios').add(data), 'Usuário cadastrado.');
 }
 async function updateUsuario(id, data){
-  if(!exigirPermissaoAdmin()) return;
+  if(!exigirPermissaoEdicao('usuarios')) return;
   await dbCall(state.db.doc('usuarios/'+id).update(data), 'Usuário atualizado.');
 }
 async function deleteUsuario(id){
-  if(!exigirPermissaoAdmin()) return;
+  if(!exigirPermissaoEdicao('usuarios')) return;
   const ok = await confirmDialog('Excluir este usuário do cadastro?');
   if(!ok) return;
   await dbCall(state.db.doc('usuarios/'+id).delete(), 'Usuário excluído.');
@@ -3164,15 +3203,15 @@ function financeiroAlteraLucroTotalMes(ano, mes){
   return financeiroAlteraLucroDoMes(ano, mes).reduce((s,f)=>s+(Number(f.valorAltera)||0),0);
 }
 async function createFinanceiro(data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('financeiro')) return;
   await dbCall(state.db.collection('financeiro').add({...data, dataInclusao:new Date().toISOString()}), 'Lançamento cadastrado.');
 }
 async function updateFinanceiro(id, data){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('financeiro')) return;
   await dbCall(state.db.doc('financeiro/'+id).update(data), 'Lançamento atualizado.');
 }
 async function deleteFinanceiro(id){
-  if(!exigirPermissaoEdicao()) return;
+  if(!exigirPermissaoEdicao('financeiro')) return;
   const ok = await confirmDialog('Excluir este lançamento do Financeiro?');
   if(!ok) return;
   await dbCall(state.db.doc('financeiro/'+id).delete(), 'Lançamento excluído.');
@@ -3425,7 +3464,7 @@ function openFinanceiroForm(existing, defaultAnoMes){
   document.getElementById('financeiro-form-submit').onclick = async ()=>{
     const form = document.getElementById('financeiro-form');
     if(!form.reportValidity()) return;
-    if(!exigirPermissaoEdicao()) return;
+    if(!exigirPermissaoEdicao('financeiro')) return;
     const fd = new FormData(form);
     const base = {
       dataVencimento: fd.get('dataVencimento'),
@@ -3556,6 +3595,8 @@ function openLembreteForm(existing){
 
 function openUsuarioForm(existing){
   const u = existing || {};
+  const permAtuais = Object.assign({}, u.permissoes);
+  MODULOS_PERMISSAO.forEach(m=>{ if(!permAtuais[m]) permAtuais[m]='nenhum'; });
   openPanel(`
     <div class="panel">
       <div class="panel-header">
@@ -3573,9 +3614,6 @@ function openUsuarioForm(existing){
           <div class="field"><label>Telefone</label>
             <input name="telefone" value="${esc(u.telefone)}">
           </div>
-          <div class="field"><label>Nível de acesso</label>
-            <select name="nivelAcesso">${NIVEIS_ACESSO.map(n=>`<option value="${n}" ${(u.nivelAcesso||'Operador')===n?'selected':''}>${NIVEIS_ACESSO_LABEL[n]}</option>`).join('')}</select>
-          </div>
           <div class="field"><label>${existing?'Nova senha':'Senha'}</label>
             <input type="password" id="usuario-senha-input" autocomplete="new-password" ${existing?'placeholder="Deixe em branco para manter"':'required'}>
           </div>
@@ -3584,12 +3622,26 @@ function openUsuarioForm(existing){
           </div>
         </div>
         <p id="usuario-senha-erro" style="font-size:.8rem;color:var(--crit);min-height:1.2em;margin:8px 0 0"></p>
+        <div class="field" style="margin-top:6px">
+          <label>Permissões por módulo</label>
+          <p style="font-size:.72rem;color:var(--ink-faint);margin:2px 0 8px">Escolha o que este usuário pode fazer em cada módulo. "Editar" inclui criar, editar e excluir registros.</p>
+          <div class="perm-table" id="usuario-perm-table">
+            ${MODULOS_PERMISSAO.map(m=>`
+              <div class="perm-row" data-modulo="${m}">
+                <span class="perm-label">${esc(MODULOS_PERMISSAO_LABEL[m])}</span>
+                <div class="perm-group">
+                  ${NIVEIS_PERMISSAO.map(n=>`<button type="button" class="perm-btn ${permAtuais[m]===n?'active':''}" data-nivel="${n}" onclick="selecionarPermissao('${m}','${n}')">${NIVEIS_PERMISSAO_LABEL[n]}</button>`).join('')}
+                </div>
+              </div>`).join('')}
+          </div>
+        </div>
       </form>
       <div class="panel-footer">
         <button class="btn btn-ghost" onclick="closePanel()">Cancelar</button>
         <button class="btn btn-primary" id="usuario-form-submit">${existing?'Salvar':'Cadastrar usuário'}</button>
       </div>
     </div>`);
+  window.__usuarioPermSelecionadas = permAtuais;
   document.getElementById('usuario-form-submit').onclick = async ()=>{
     const form = document.getElementById('usuario-form');
     if(!form.reportValidity()) return;
@@ -3605,6 +3657,7 @@ function openUsuarioForm(existing){
     }
     const fd = new FormData(form);
     const data = Object.fromEntries(fd.entries());
+    data.permissoes = window.__usuarioPermSelecionadas;
     if(senha){
       const salt = gerarSalt();
       data.senhaSalt = salt;
@@ -3615,10 +3668,15 @@ function openUsuarioForm(existing){
     closePanel();
   };
 }
+function selecionarPermissao(modulo, nivel){
+  window.__usuarioPermSelecionadas[modulo] = nivel;
+  const row = document.querySelector(`.perm-row[data-modulo="${modulo}"]`);
+  row.querySelectorAll('.perm-btn').forEach(b=>{ b.classList.toggle('active', b.dataset.nivel===nivel); });
+}
 
 function faturaStatusPillSelect(f){
   const level = STATUS_FATURA_LEVEL[f.status]||'neutral';
-  if(!podeEditar()) return `<span class="pill ${level}">${esc(STATUS_FATURA_LABEL[f.status]||f.status)}</span>`;
+  if(!podeEditar('faturamento')) return `<span class="pill ${level}">${esc(STATUS_FATURA_LABEL[f.status]||f.status)}</span>`;
   return `<select class="pill-select ${level}" onclick="event.stopPropagation()" onchange="event.stopPropagation(); updateFaturaStatus(faturaById('${f.id}'), this.value)">
     ${STATUS_FATURA.map(s=>`<option value="${s}" ${f.status===s?'selected':''}>${STATUS_FATURA_LABEL[s]}</option>`).join('')}
   </select>`;
@@ -3642,29 +3700,29 @@ function renderSidebar(){
         <div class="nav-label">Visão geral</div>
         ${item('painel','Painel',ICONS.grid)}
       </div>
-      <div class="nav-group">
+      ${podeVerModulo('empresas') ? `<div class="nav-group">
         <div class="nav-label">Sua empresa</div>
         ${item('empresas','Minhas Empresas',ICONS.briefcase, state.empresas.length)}
-      </div>
-      <div class="nav-group">
+      </div>` : ''}
+      ${podeVerModulo('lembretes') ? `<div class="nav-group">
         <div class="nav-label">Lembretes</div>
         ${item('lembretes','Lembretes',ICONS.bell, lembretesPendentesAtencao().length)}
-      </div>
-      <div class="nav-group">
+      </div>` : ''}
+      ${(podeVerModulo('atas')||podeVerModulo('pedidos')||podeVerModulo('pedidosCompra')||podeVerModulo('faturamento')||podeVerModulo('financeiro')||podeVerModulo('lucro')||podeVerModulo('orgaos')||podeVerModulo('custosMinimos')) ? `<div class="nav-group">
         <div class="nav-label">Registro</div>
-        ${item('atas','Atas e Contratos',ICONS.doc, state.atas.length)}
-        ${item('pedidos','Pedidos',ICONS.cart, state.pedidos.length)}
-        ${item('pedidoscompra','Pedidos de Compra',ICONS.inbox, state.pedidosCompra.length)}
-        ${item('faturamento','Faturamento',ICONS.sheet, state.faturas.length)}
-        ${item('financeiro','Financeiro',ICONS.wallet, state.financeiro.length)}
-        ${item('lucro','Lucro',ICONS.trending)}
-        ${item('orgaos','Órgãos Públicos',ICONS.building, state.orgaos.length)}
-        ${item('custosminimos','Custo/Mínimo',ICONS.tag, state.custosMinimos.length)}
-      </div>
-      <div class="nav-group">
+        ${podeVerModulo('atas')?item('atas','Atas e Contratos',ICONS.doc, state.atas.length):''}
+        ${podeVerModulo('pedidos')?item('pedidos','Pedidos',ICONS.cart, state.pedidos.length):''}
+        ${podeVerModulo('pedidosCompra')?item('pedidoscompra','Pedidos de Compra',ICONS.inbox, state.pedidosCompra.length):''}
+        ${podeVerModulo('faturamento')?item('faturamento','Faturamento',ICONS.sheet, state.faturas.length):''}
+        ${podeVerModulo('financeiro')?item('financeiro','Financeiro',ICONS.wallet, state.financeiro.length):''}
+        ${podeVerModulo('lucro')?item('lucro','Lucro',ICONS.trending):''}
+        ${podeVerModulo('orgaos')?item('orgaos','Órgãos Públicos',ICONS.building, state.orgaos.length):''}
+        ${podeVerModulo('custosMinimos')?item('custosminimos','Custo/Mínimo',ICONS.tag, state.custosMinimos.length):''}
+      </div>` : ''}
+      ${podeVerModulo('usuarios') ? `<div class="nav-group">
         <div class="nav-label">Configurações</div>
         ${item('usuarios','Usuários',ICONS.users, state.usuarios.length)}
-      </div>
+      </div>` : ''}
       <div class="nav-group">
         <div class="nav-label">Próximos módulos</div>
         ${item('estoque','Estoque geral',ICONS.box, undefined, true)}
@@ -3723,8 +3781,9 @@ function renderPainel(){
       <div class="kpi"><div class="label">Saldo total a receber (compras)</div><div class="value ${saldoTotalReceber?'warn':''}">${fmtBRL(saldoTotalReceber)}</div></div>
       <div class="kpi"><div class="label">Faturas emitidas</div><div class="value">${state.faturas.length}</div></div>
       <div class="kpi"><div class="label">Saldo total a receber (faturamento)</div><div class="value ${saldoTotalFaturamento?'warn':''}">${fmtBRL(saldoTotalFaturamento)}</div></div>
-      <div class="kpi"><div class="label">Lembretes pendentes</div><div class="value ${lembretesAtencao.length?'crit':''}">${lembretesAtencao.length}</div></div>
+      ${podeVerModulo('lembretes')?`<div class="kpi"><div class="label">Lembretes pendentes</div><div class="value ${lembretesAtencao.length?'crit':''}">${lembretesAtencao.length}</div></div>`:''}
     </div>
+    ${podeVerModulo('lembretes')?`
     <h3 class="section-title">${ICONS.bell} Lembretes que pedem atenção</h3>
     <div class="card">
       ${lembretesAtencao.length===0 ? `<div class="empty"><h3>Nenhum lembrete pedindo atenção agora</h3><p>Quando a data/antecedência de um lembrete chegar, ele aparece aqui.</p></div>` : `
@@ -3738,11 +3797,12 @@ function renderPainel(){
               <td>${fmtDate(l.dataAviso)}</td>
               <td>${esc(l.horarioAviso)||'—'}</td>
               <td>${lembreteStatusPill(l)}</td>
-              <td onclick="event.stopPropagation()">${podeEditar()?`<button class="icon-btn" title="Marcar como concluído" onclick="marcarLembreteConcluido('${l.id}')">${ICONS.check}</button>`:''}</td>
+              <td onclick="event.stopPropagation()">${podeEditar('lembretes')?`<button class="icon-btn" title="Marcar como concluído" onclick="marcarLembreteConcluido('${l.id}')">${ICONS.check}</button>`:''}</td>
             </tr>`).join('')}
         </tbody>
       </table></div>`}
-    </div>
+    </div>`:''}
+    ${podeVerModulo('atas')?`
     <h3 class="section-title">Vencimentos que pedem atenção</h3>
     <div class="card">
       ${atencao.length===0 ? `<div class="empty"><h3>Nada vencendo nos próximos 60 dias</h3><p>Quando uma vigência se aproximar do fim, ela aparece aqui.</p></div>` : `
@@ -3758,7 +3818,8 @@ function renderPainel(){
             </tr>`).join('')}
         </tbody>
       </table></div>`}
-    </div>`;
+    </div>`:''}
+    `;
 }
 
 function renderAtasList(){
@@ -3774,7 +3835,7 @@ function renderAtasList(){
   return `
     <div class="topbar">
       <div><h1>Atas e Contratos</h1><div class="sub">${state.atas.length} registro(s) cadastrado(s)</div></div>
-      <div class="actions">${podeEditar()?`<button class="btn btn-primary" onclick="openAtaForm()">${ICONS.plus}Nova Ata</button>`:''}</div>
+      <div class="actions">${podeEditar('atas')?`<button class="btn btn-primary" onclick="openAtaForm()">${ICONS.plus}Nova Ata</button>`:''}</div>
     </div>
     <div class="toolbar">
       <div class="search">${ICONS.search}<input id="atas-search-input" placeholder="Buscar por órgão, número, objeto ou empresa..." value="${esc(state.search)}" oninput="state.search=this.value; render();"></div>
@@ -3790,7 +3851,7 @@ function renderAtasList(){
     <div class="card">
       ${state.atas.length===0 ? `
       <div class="empty"><h3>Nenhuma Ata cadastrada ainda</h3><p>Cadastre a primeira Ata de Registro de Preços ou Contrato com um órgão público.</p>
-        ${podeEditar()?`<button class="btn btn-primary" onclick="openAtaForm()">${ICONS.plus}Nova Ata</button>`:''}</div>
+        ${podeEditar('atas')?`<button class="btn btn-primary" onclick="openAtaForm()">${ICONS.plus}Nova Ata</button>`:''}</div>
       ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou os filtros.</p></div>` : `
       <div class="table-wrap"><table>
         <thead><tr><th>Empresa</th><th>Número</th><th>Órgão</th><th>Cidade</th><th>Objeto</th><th>Modalidade</th><th>Vigência</th><th>Valor total</th><th>Status</th></tr></thead>
@@ -3847,7 +3908,7 @@ function renderAtaDetail(){
         <div class="sub">${esc(a.orgao)}${a.empresaNome?` <span style="color:var(--ink-faint)">· via</span> ${esc(a.empresaNome)}`:''}</div>
       </div>
       <div class="actions">
-        ${podeEditar()?`
+        ${podeEditar('atas')?`
         <button class="btn btn-primary" onclick="openPedidoForm('${a.id}')">${ICONS.cart}Novo Pedido</button>
         <button class="btn btn-ghost" onclick='openAtaForm(${JSON.stringify(a).replace(/'/g,"&#39;")})'>${ICONS.edit}Editar</button>
         <button class="btn btn-danger" onclick="handleDeleteAta('${a.id}')">${ICONS.trash}Excluir</button>
@@ -3889,8 +3950,8 @@ function renderAtaDetail(){
       <h3 class="section-title" style="margin:0">Itens (${itens.length})</h3>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" onclick="exportarItensAtaCSV(ataById('${a.id}'))">${ICONS.sheet}Exportar planilha</button>
-        ${podeEditar()?`<button class="btn btn-ghost btn-sm" onclick="abrirImportarItensAta(ataById('${a.id}'))">${ICONS.sheet}Importar planilha</button>`:''}
-        ${podeEditar()?`<button class="btn btn-primary btn-sm" onclick="openItemForm('${a.id}')">${ICONS.plus}Adicionar item</button>`:''}
+        ${podeEditar('atas')?`<button class="btn btn-ghost btn-sm" onclick="abrirImportarItensAta(ataById('${a.id}'))">${ICONS.sheet}Importar planilha</button>`:''}
+        ${podeEditar('atas')?`<button class="btn btn-primary btn-sm" onclick="openItemForm('${a.id}')">${ICONS.plus}Adicionar item</button>`:''}
       </div>
     </div>
     <div class="card">
@@ -3919,7 +3980,7 @@ function renderAtaDetail(){
               <td class="num">${saldoQtd}</td>
               <td><span class="pill ${st.level}">${st.label}</span></td>
               <td onclick="event.stopPropagation()" style="white-space:nowrap">
-                ${podeEditar()?`
+                ${podeEditar('atas')?`
                 <button class="icon-btn" onclick='openItemForm("${a.id}", ${JSON.stringify(it).replace(/'/g,"&#39;")})'>${ICONS.edit}</button>
                 <button class="icon-btn" onclick="deleteItem('${a.id}','${it.id}')">${ICONS.trash}</button>
                 `:''}
@@ -3960,12 +4021,12 @@ function renderOrgaos(){
   return `
     <div class="topbar">
       <div><h1>Órgãos Públicos</h1><div class="sub">Cadastro de apoio, usado ao registrar Atas e Contratos.</div></div>
-      <div class="actions">${podeEditar()?`<button class="btn btn-primary" onclick="openOrgaoForm()">${ICONS.plus}Novo órgão</button>`:''}</div>
+      <div class="actions">${podeEditar('orgaos')?`<button class="btn btn-primary" onclick="openOrgaoForm()">${ICONS.plus}Novo órgão</button>`:''}</div>
     </div>
     <div class="card">
       ${state.orgaos.length===0 ? `
       <div class="empty"><h3>Nenhum órgão cadastrado</h3><p>Cadastre os órgãos com quem você tem Atas e Contratos.</p>
-        ${podeEditar()?`<button class="btn btn-primary" onclick="openOrgaoForm()">${ICONS.plus}Novo órgão</button>`:''}</div>
+        ${podeEditar('orgaos')?`<button class="btn btn-primary" onclick="openOrgaoForm()">${ICONS.plus}Novo órgão</button>`:''}</div>
       ` : `
       <div class="table-wrap"><table>
         <thead><tr><th>Nome</th><th>Esfera</th><th>Cidade/UF</th><th>Responsável</th><th>Contato</th><th></th></tr></thead>
@@ -3977,7 +4038,7 @@ function renderOrgaos(){
               <td>${esc(o.cidadeUf)||'—'}</td>
               <td>${esc(o.responsavel)||'—'}</td>
               <td>${esc(o.telefone||o.email)||'—'}</td>
-              <td onclick="event.stopPropagation()">${podeEditar()?`<button class="icon-btn" onclick="deleteOrgao('${o.id}')">${ICONS.trash}</button>`:''}</td>
+              <td onclick="event.stopPropagation()">${podeEditar('orgaos')?`<button class="icon-btn" onclick="deleteOrgao('${o.id}')">${ICONS.trash}</button>`:''}</td>
             </tr>`).join('')}
         </tbody>
       </table></div>`}
@@ -3997,7 +4058,7 @@ function renderOrgaoDetail(){
         <div class="sub">${esc(o.esfera)||'—'}${o.cidadeUf?` <span style="color:var(--ink-faint)">·</span> ${esc(o.cidadeUf)}`:''}</div>
       </div>
       <div class="actions">
-        ${podeEditar()?`
+        ${podeEditar('orgaos')?`
         <button class="btn btn-ghost" onclick='openOrgaoForm(${JSON.stringify(o).replace(/'/g,"&#39;")})'>${ICONS.edit}Editar</button>
         <button class="btn btn-danger" onclick="handleDeleteOrgao('${o.id}')">${ICONS.trash}Excluir</button>
         `:''}
@@ -4020,7 +4081,7 @@ function renderOrgaoDetail(){
 
     <div class="itens-head">
       <h3 class="section-title" style="margin:0">Locais de entrega (${locais.length})</h3>
-      ${podeEditar()?`<button class="btn btn-primary btn-sm" onclick="openLocalEntregaForm('${o.id}')">${ICONS.plus}Adicionar local</button>`:''}
+      ${podeEditar('orgaos')?`<button class="btn btn-primary btn-sm" onclick="openLocalEntregaForm('${o.id}')">${ICONS.plus}Adicionar local</button>`:''}
     </div>
     <div class="card">
       ${locais.length===0 ? `<div class="empty"><h3>Nenhum local de entrega cadastrado</h3><p>Cadastre os endereços onde os pedidos deste órgão devem ser entregues.</p></div>` : `
@@ -4037,7 +4098,7 @@ function renderOrgaoDetail(){
               <td>${esc(l.email)||'—'}</td>
               <td>${esc(l.whatsapp)||'—'}</td>
               <td onclick="event.stopPropagation()" style="white-space:nowrap">
-                ${podeEditar()?`
+                ${podeEditar('orgaos')?`
                 <button class="icon-btn" onclick='openLocalEntregaForm("${o.id}", ${JSON.stringify(l).replace(/'/g,"&#39;")})'>${ICONS.edit}</button>
                 <button class="icon-btn" onclick="deleteLocalEntrega('${o.id}','${l.id}')">${ICONS.trash}</button>
                 `:''}
@@ -4052,12 +4113,12 @@ function renderEmpresas(){
   return `
     <div class="topbar">
       <div><h1>Minhas Empresas</h1><div class="sub">Cadastro das suas empresas, para identificar de qual delas é cada Ata, Contrato ou Pedido.</div></div>
-      <div class="actions">${podeEditar()?`<button class="btn btn-primary" onclick="openEmpresaForm()">${ICONS.plus}Nova empresa</button>`:''}</div>
+      <div class="actions">${podeEditar('empresas')?`<button class="btn btn-primary" onclick="openEmpresaForm()">${ICONS.plus}Nova empresa</button>`:''}</div>
     </div>
     <div class="card">
       ${state.empresas.length===0 ? `
       <div class="empty"><h3>Nenhuma empresa cadastrada</h3><p>Cadastre as empresas que participam de licitações e Atas/Contratos.</p>
-        ${podeEditar()?`<button class="btn btn-primary" onclick="openEmpresaForm()">${ICONS.plus}Nova empresa</button>`:''}</div>
+        ${podeEditar('empresas')?`<button class="btn btn-primary" onclick="openEmpresaForm()">${ICONS.plus}Nova empresa</button>`:''}</div>
       ` : `
       <div class="table-wrap"><table>
         <thead><tr><th>Razão social</th><th>Nome fantasia</th><th>CNPJ</th><th>Cidade/UF</th><th>Responsável</th><th></th></tr></thead>
@@ -4069,36 +4130,44 @@ function renderEmpresas(){
               <td class="mono">${esc(e.cnpj)||'—'}</td>
               <td>${esc(e.cidadeUf)||'—'}</td>
               <td>${esc(e.responsavel)||'—'}</td>
-              <td onclick="event.stopPropagation()">${podeEditar()?`<button class="icon-btn" onclick="deleteEmpresa('${e.id}')">${ICONS.trash}</button>`:''}</td>
+              <td onclick="event.stopPropagation()">${podeEditar('empresas')?`<button class="icon-btn" onclick="deleteEmpresa('${e.id}')">${ICONS.trash}</button>`:''}</td>
             </tr>`).join('')}
         </tbody>
       </table></div>`}
     </div>`;
 }
 
+function resumoPermissoes(u){
+  const p = u.permissoes || {};
+  const editar = MODULOS_PERMISSAO.filter(m=>p[m]==='editar').length;
+  const ver = MODULOS_PERMISSAO.filter(m=>p[m]==='ver').length;
+  if(editar===MODULOS_PERMISSAO.length) return {texto:'Acesso total', nivel:'ok'};
+  if(editar===0 && ver===0) return {texto:'Sem acesso', nivel:'neutral'};
+  return {texto: editar+' com edição · '+ver+' só ver', nivel:'warn'};
+}
 function renderUsuarios(){
   return `
     <div class="topbar">
-      <div><h1>Usuários</h1><div class="sub">Cadastro de usuários e níveis de acesso.</div></div>
-      <div class="actions">${nivelAcessoAtual()==='Administrador'?`<button class="btn btn-primary" onclick="openUsuarioForm()">${ICONS.plus}Novo usuário</button>`:''}</div>
+      <div><h1>Usuários</h1><div class="sub">Cadastro de usuários e permissões por módulo.</div></div>
+      <div class="actions">${podeEditar('usuarios')?`<button class="btn btn-primary" onclick="openUsuarioForm()">${ICONS.plus}Novo usuário</button>`:''}</div>
     </div>
-    <p style="font-size:.82rem;color:var(--ink-soft);margin:-6px 0 12px">Visualização não pode criar, editar ou excluir nada no sistema. Somente Administrador pode gerenciar usuários e níveis de acesso.</p>
+    <p style="font-size:.82rem;color:var(--ink-soft);margin:-6px 0 12px">As permissões de cada usuário são definidas módulo a módulo. Somente quem tem permissão de "Editar" em Usuários pode gerenciar usuários e permissões.</p>
     <div class="card">
       ${state.usuarios.length===0 ? `
-      <div class="empty"><h3>Nenhum usuário cadastrado</h3><p>Cadastre as pessoas que usam este sistema e o nível de acesso de cada uma.</p>
-        ${nivelAcessoAtual()==='Administrador'?`<button class="btn btn-primary" onclick="openUsuarioForm()">${ICONS.plus}Novo usuário</button>`:''}</div>
+      <div class="empty"><h3>Nenhum usuário cadastrado</h3><p>Cadastre as pessoas que usam este sistema e as permissões de cada uma.</p>
+        ${podeEditar('usuarios')?`<button class="btn btn-primary" onclick="openUsuarioForm()">${ICONS.plus}Novo usuário</button>`:''}</div>
       ` : `
       <div class="table-wrap"><table>
-        <thead><tr><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Nível de acesso</th><th></th></tr></thead>
+        <thead><tr><th>Nome</th><th>E-mail</th><th>Telefone</th><th>Permissões</th><th></th></tr></thead>
         <tbody>
-          ${state.usuarios.map(u=>`
+          ${state.usuarios.map(u=>{ const r = resumoPermissoes(u); return `
             <tr onclick='openUsuarioForm(${JSON.stringify(u).replace(/'/g,"&#39;")})'>
               <td>${esc(u.nome)}</td>
               <td>${esc(u.email)||'—'}</td>
               <td>${esc(u.telefone)||'—'}</td>
-              <td><span class="pill ${NIVEIS_ACESSO_LEVEL[u.nivelAcesso]||'neutral'}">${esc(NIVEIS_ACESSO_LABEL[u.nivelAcesso])||esc(u.nivelAcesso)||'—'}</span></td>
-              <td onclick="event.stopPropagation()">${nivelAcessoAtual()==='Administrador'?`<button class="icon-btn" onclick="deleteUsuario('${u.id}')">${ICONS.trash}</button>`:''}</td>
-            </tr>`).join('')}
+              <td><span class="pill ${r.nivel}">${esc(r.texto)}</span></td>
+              <td onclick="event.stopPropagation()">${podeEditar('usuarios')?`<button class="icon-btn" onclick="deleteUsuario('${u.id}')">${ICONS.trash}</button>`:''}</td>
+            </tr>`; }).join('')}
         </tbody>
       </table></div>`}
     </div>`;
@@ -4121,7 +4190,7 @@ function renderPedidosList(){
   return `
     <div class="topbar">
       <div><h1>Pedidos</h1><div class="sub">${state.pedidos.length} pedido(s) lançado(s)</div></div>
-      <div class="actions">${podeEditar()?`<button class="btn btn-primary" onclick="openPedidoForm()">${ICONS.plus}Novo Pedido</button>`:''}</div>
+      <div class="actions">${podeEditar('pedidos')?`<button class="btn btn-primary" onclick="openPedidoForm()">${ICONS.plus}Novo Pedido</button>`:''}</div>
     </div>
     <div class="toolbar">
       <div class="search">${ICONS.search}<input id="pedidos-search-input" placeholder="Buscar por órgão, Ata, empresa ou observações..." value="${esc(state.pedidoSearch)}" oninput="state.pedidoSearch=this.value; render();"></div>
@@ -4147,7 +4216,7 @@ function renderPedidosList(){
     <div class="card">
       ${state.pedidos.length===0 ? `
       <div class="empty"><h3>Nenhum pedido lançado ainda</h3><p>Lance um pedido a partir de uma Ata/Contrato já cadastrada.</p>
-        ${podeEditar()?`<button class="btn btn-primary" onclick="openPedidoForm()">${ICONS.plus}Novo Pedido</button>`:''}</div>
+        ${podeEditar('pedidos')?`<button class="btn btn-primary" onclick="openPedidoForm()">${ICONS.plus}Novo Pedido</button>`:''}</div>
       ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou os filtros.</p></div>` : `
       <div class="table-wrap"><table>
         <thead><tr><th style="width:1%"><input type="checkbox" onclick="event.stopPropagation()" onchange="toggleTodosPedidosSelecionados()" ${rows.length>0 && rows.every(p=>state.pedidosSelecionados.has(p.id))?'checked':''}></th><th>Empresa</th><th>Data</th><th>Ata/Contrato</th><th>Órgão</th><th>Cidade</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Valor</th><th>Saldo a entregar</th><th>Prazo de entrega</th><th>Status</th></tr></thead>
@@ -4218,14 +4287,14 @@ function renderPedidoDetail(){
         <div class="sub">${esc(p.orgao)||'—'} · Ata ${ata?`<span style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="setView('ata-detail',{ataId:'${p.ataId}'})">${esc(p.ataNumero)}</span>`:esc(p.ataNumero)||'—'}${ata&&ata.empresaNome?` <span style="color:var(--ink-faint)">· via</span> ${esc(ata.empresaNome)}`:''}</div>
       </div>
       <div class="actions no-print">
-        ${podeEditar()?`
+        ${podeEditar('pedidos')?`
         ${p.status!=='Cancelado' ? `<button class="btn btn-primary" onclick="openSepararPedidoForm(pedidoById('${p.id}'))">${ICONS.box}Separar Pedido</button>` : ''}
         <button class="btn btn-primary" onclick="openPedidoCompraForm(pedidoById('${p.id}'))">${ICONS.inbox}Gerar Pedido de Compra</button>
         ${p.status!=='Cancelado' ? `<button class="btn btn-primary" onclick="openFaturarPedidoForm(pedidoById('${p.id}'))">${ICONS.sheet}Faturar</button>` : ''}
         `:''}
         <button class="btn btn-ghost" onclick="imprimirPagina()">${ICONS.print}Imprimir</button>
         <button class="btn btn-ghost" onclick="abrirImpressao()">${ICONS.print}Baixar PDF</button>
-        ${podeEditar()?`
+        ${podeEditar('pedidos')?`
         <button class="btn btn-ghost" onclick="openPedidoEditForm(pedidoById('${p.id}'))">${ICONS.edit}Editar</button>
         ${p.status==='Cancelado'
           ? `<button class="btn btn-ghost" onclick="handleReabrirPedido(pedidoById('${p.id}'))">${ICONS.back}Reabrir Pedido</button>`
@@ -4274,10 +4343,10 @@ function renderPedidoDetail(){
             const sep = cancelado?0:Math.min(Number(it.quantidadeSeparada)||0, qtd);
             const ent = cancelado?0:Math.min(Number(it.quantidadeEntregue)||0, qtd);
             const saldoItem = cancelado?0:(qtd-ent);
-            const sepCell = p.status==='Separado Parcial' && podeEditar()
+            const sepCell = p.status==='Separado Parcial' && podeEditar('pedidos')
               ? `<input type="number" min="0" max="${qtd}" step="0.01" style="width:80px" value="${sep||''}" placeholder="0" onchange="commitPedidoItemQuantity(pedidoById('${p.id}'),'${it.id}','quantidadeSeparada',this,${qtd})">`
               : `${sep}`;
-            const entCell = p.status==='Entregue Parcial' && podeEditar()
+            const entCell = p.status==='Entregue Parcial' && podeEditar('pedidos')
               ? `<input type="number" min="0" max="${qtd}" step="0.01" style="width:80px" value="${ent||''}" placeholder="0" onchange="commitPedidoItemQuantity(pedidoById('${p.id}'),'${it.id}','quantidadeEntregue',this,${qtd})">`
               : `${ent}`;
             const custo = Number(it.valorCusto)||0;
@@ -4491,7 +4560,7 @@ function renderPedidoCompraDetail(){
         <div class="sub">${esc(p.fornecedor)}${p.origemPedidoInfo?` <span style="color:var(--ink-faint)">· gerado de</span> ${origemLink}`:''}</div>
       </div>
       <div class="actions no-print">
-        ${podeEditar()?`
+        ${podeEditar('pedidosCompra')?`
         <select onchange="updatePedidoCompraStatus(pedidoCompraById('${p.id}'), this.value)">
           ${STATUS_PEDIDO_COMPRA.map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${STATUS_PEDIDO_COMPRA_LABEL[s]}</option>`).join('')}
         </select>
@@ -4499,7 +4568,7 @@ function renderPedidoCompraDetail(){
         <button class="btn btn-ghost" onclick="copyPedidoCompraExcel('${p.id}')">${ICONS.sheet}Copiar para Excel</button>
         <button class="btn btn-ghost" onclick="imprimirPagina()">${ICONS.print}Imprimir</button>
         <button class="btn btn-ghost" onclick="abrirImpressao()">${ICONS.print}Baixar PDF</button>
-        ${podeEditar()?`
+        ${podeEditar('pedidosCompra')?`
         <button class="btn btn-ghost" onclick="openPedidoCompraEditForm(pedidoCompraById('${p.id}'))">${ICONS.edit}Editar</button>
         <button class="btn btn-danger" onclick="handleDeletePedidoCompra('${p.id}')">${ICONS.trash}Excluir</button>
         `:''}
@@ -4533,7 +4602,7 @@ function renderPedidoCompraDetail(){
             const qtd = Number(it.quantidade)||0;
             const rec = cancelado?0:Math.min(Number(it.quantidadeRecebida)||0, qtd);
             const saldoItem = cancelado?0:(qtd-rec);
-            const recCell = p.status==='Recebido Parcial' && podeEditar()
+            const recCell = p.status==='Recebido Parcial' && podeEditar('pedidosCompra')
               ? `<input type="number" min="0" max="${qtd}" step="0.01" style="width:80px" value="${rec||''}" placeholder="0" onchange="commitPedidoCompraItemQuantity(pedidoCompraById('${p.id}'),'${it.id}',this,${qtd})">`
               : `${rec}`;
             const origemP = it.origemPedidoId ? pedidoById(it.origemPedidoId) : null;
@@ -5071,7 +5140,7 @@ function renderFaturasList(){
   return `
     <div class="topbar">
       <div><h1>Faturamento</h1><div class="sub">${state.faturas.length} fatura(s) emitida(s)</div></div>
-      <div class="actions">${podeEditar()?`<button class="btn btn-ghost" onclick="openFaturaForm()">${ICONS.plus}Fatura avulsa</button>`:''}</div>
+      <div class="actions">${podeEditar('faturamento')?`<button class="btn btn-ghost" onclick="openFaturaForm()">${ICONS.plus}Fatura avulsa</button>`:''}</div>
     </div>
 
     <h3 class="section-title">Saldo entregue e ainda não faturado</h3>
@@ -5186,7 +5255,7 @@ function renderFaturaDetail(){
         <div class="sub">${fmtDate(p.dataEmissao)}${p.origemPedidoInfo?` <span style="color:var(--ink-faint)">· gerada de</span> ${origemLink}`:''}</div>
       </div>
       <div class="actions no-print">
-        ${podeEditar()?`
+        ${podeEditar('faturamento')?`
         <select onchange="updateFaturaStatus(faturaById('${p.id}'), this.value)">
           ${STATUS_FATURA.map(s=>`<option value="${s}" ${p.status===s?'selected':''}>${STATUS_FATURA_LABEL[s]}</option>`).join('')}
         </select>
@@ -5194,7 +5263,7 @@ function renderFaturaDetail(){
         <button class="btn btn-ghost" onclick="copyFaturaExcel('${p.id}')">${ICONS.sheet}Copiar para Excel</button>
         <button class="btn btn-ghost" onclick="imprimirPagina()">${ICONS.print}Imprimir</button>
         <button class="btn btn-ghost" onclick="abrirImpressao()">${ICONS.print}Baixar PDF</button>
-        ${podeEditar()?`
+        ${podeEditar('faturamento')?`
         <button class="btn btn-ghost" onclick="openFaturaEditForm(faturaById('${p.id}'))">${ICONS.edit}Editar</button>
         <button class="btn btn-danger" onclick="handleDeleteFatura('${p.id}')">${ICONS.trash}Excluir</button>
         `:''}
@@ -5217,7 +5286,7 @@ function renderFaturaDetail(){
           <div class="field"><label>Série</label><div class="readval mono">${esc(p.serieNota)||'—'}</div></div>
           <div class="field"><label>Data de vencimento</label><div class="readval">${fmtDate(p.dataVencimento)}</div></div>
           <div class="field"><label>Valor pago</label>
-            ${p.status==='Paga Parcial' && podeEditar()
+            ${p.status==='Paga Parcial' && podeEditar('faturamento')
               ? `<input type="number" min="0" max="${valorTotalCalc}" step="0.01" value="${valorPago||''}" placeholder="0" onchange="commitFaturaValorPago(faturaById('${p.id}'), this)">`
               : `<div class="readval mono">${fmtBRL(valorPago)}</div>`}
           </div>
@@ -5359,7 +5428,7 @@ function renderLucroDetail(){
         <div class="sub">${faturas.length} fatura(s) neste mês</div>
       </div>
       <div class="actions">
-        ${podeEditar()?`<button class="btn btn-primary" onclick="openDespesaForm('${anoMesStr(ano,mes)}')">${ICONS.plus}Nova despesa</button>`:''}
+        ${podeEditar('lucro')?`<button class="btn btn-primary" onclick="openDespesaForm('${anoMesStr(ano,mes)}')">${ICONS.plus}Nova despesa</button>`:''}
       </div>
     </div>
 
@@ -5405,7 +5474,7 @@ function renderLucroDetail(){
               <td>${esc(d.descricao)}</td>
               <td class="num">${fmtBRL(d.valor)}</td>
               <td style="white-space:nowrap">
-                ${podeEditar()?`
+                ${podeEditar('lucro')?`
                 <button class="icon-btn" onclick='openDespesaForm("${anoMesStr(ano,mes)}", ${JSON.stringify(d).replace(/'/g,"&#39;")})'>${ICONS.edit}</button>
                 <button class="icon-btn" onclick="deleteDespesa('${d.id}')">${ICONS.trash}</button>
                 `:''}
@@ -5443,7 +5512,7 @@ function renderCustosMinimos(){
   return `
     <div class="topbar">
       <div><h1>Custo/Mínimo</h1><div class="sub">${state.custosMinimos.length} item(ns) cadastrado(s)</div></div>
-      <div class="actions">${podeEditar()?`<button class="btn btn-primary" onclick="openCustoMinimoForm()">${ICONS.plus}Novo item</button>`:''}</div>
+      <div class="actions">${podeEditar('custosMinimos')?`<button class="btn btn-primary" onclick="openCustoMinimoForm()">${ICONS.plus}Novo item</button>`:''}</div>
     </div>
     <div class="toolbar">
       <div class="search">${ICONS.search}<input id="custo-minimo-search-input" placeholder="Buscar por item, fabricante ou marca..." value="${esc(state.custoMinimoSearch)}" oninput="state.custoMinimoSearch=this.value; render();"></div>
@@ -5451,7 +5520,7 @@ function renderCustosMinimos(){
     <div class="card">
       ${state.custosMinimos.length===0 ? `
       <div class="empty"><h3>Nenhum item cadastrado</h3><p>Cadastre os itens com seu custo e composição de preço mínimo.</p>
-        ${podeEditar()?`<button class="btn btn-primary" onclick="openCustoMinimoForm()">${ICONS.plus}Novo item</button>`:''}</div>
+        ${podeEditar('custosMinimos')?`<button class="btn btn-primary" onclick="openCustoMinimoForm()">${ICONS.plus}Novo item</button>`:''}</div>
       ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca.</p></div>` : `
       <div class="table-wrap"><table>
         <thead><tr><th>Item</th><th>Fabricante</th><th>Marca</th><th>Valor do item</th><th>Frete</th><th>IPI</th><th>Difal</th><th>Outra Disp.</th><th>Custo</th><th>Custo Unit.</th><th>Margem</th><th>Mínimo</th><th>Nº Unid.</th><th>Mínimo Unit.</th><th></th></tr></thead>
@@ -5472,7 +5541,7 @@ function renderCustosMinimos(){
               <td class="num">${c.custo>0?fmtBRL(custoMinimoValor(c)):'—'}</td>
               <td class="num">${c.numeroUnidades>0?c.numeroUnidades:'—'}</td>
               <td class="num">${c.numeroUnidades>0?fmtBRL(minimoUnitarioValor(c)):'—'}</td>
-              <td onclick="event.stopPropagation()">${podeEditar()?`<button class="icon-btn" onclick="deleteCustoMinimo('${c.id}')">${ICONS.trash}</button>`:''}</td>
+              <td onclick="event.stopPropagation()">${podeEditar('custosMinimos')?`<button class="icon-btn" onclick="deleteCustoMinimo('${c.id}')">${ICONS.trash}</button>`:''}</td>
             </tr>`).join('')}
         </tbody>
       </table></div>`}
@@ -5512,7 +5581,7 @@ function renderFinanceiro(){
         <button class="btn btn-ghost btn-sm" onclick="state.financeiroAno=state.financeiroAno-1; render();">${ICONS.chevronLeft}</button>
         <div class="btn btn-ghost btn-sm mono" style="pointer-events:none">${ano}</div>
         <button class="btn btn-ghost btn-sm" onclick="state.financeiroAno=state.financeiroAno+1; render();">${ICONS.chevronRight}</button>
-        ${podeEditar()?`<button class="btn btn-primary" onclick="openFinanceiroForm()">${ICONS.plus}Novo lançamento</button>`:''}
+        ${podeEditar('financeiro')?`<button class="btn btn-primary" onclick="openFinanceiroForm()">${ICONS.plus}Novo lançamento</button>`:''}
       </div>
     </div>
     <div class="kpi-row">
@@ -5557,7 +5626,7 @@ function renderFinanceiroMesDetail(){
         <h1>Financeiro — ${mesLabel(mes)} / ${ano}</h1>
         <div class="sub">${financeiroDoMes(ano,mes).length} lançamento(s) neste mês</div>
       </div>
-      <div class="actions">${podeEditar()?`<button class="btn btn-primary" onclick="openFinanceiroForm(null, '${anoMesStr(ano,mes)}')">${ICONS.plus}Novo lançamento</button>`:''}</div>
+      <div class="actions">${podeEditar('financeiro')?`<button class="btn btn-primary" onclick="openFinanceiroForm(null, '${anoMesStr(ano,mes)}')">${ICONS.plus}Novo lançamento</button>`:''}</div>
     </div>
     <div class="kpi-row">
       <div class="kpi"><div class="label">Sem alterar o lucro</div><div class="value">${fmtBRL(totais.totalSem)}</div></div>
@@ -5571,7 +5640,7 @@ function renderFinanceiroMesDetail(){
     <div class="card">
       ${financeiroDoMes(ano,mes).length===0 ? `
       <div class="empty"><h3>Nenhum lançamento neste mês</h3><p>Cadastre as contas a pagar com vencimento neste mês.</p>
-        ${podeEditar()?`<button class="btn btn-primary" onclick="openFinanceiroForm(null, '${anoMesStr(ano,mes)}')">${ICONS.plus}Novo lançamento</button>`:''}</div>
+        ${podeEditar('financeiro')?`<button class="btn btn-primary" onclick="openFinanceiroForm(null, '${anoMesStr(ano,mes)}')">${ICONS.plus}Novo lançamento</button>`:''}</div>
       ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca.</p></div>` : `
       <div class="table-wrap"><table>
         <thead><tr><th>Vencimento</th><th>NF</th><th>Razão / Item</th><th>Parcela</th><th class="thc">Sem alterar</th><th class="thc">Altera o lucro</th><th class="thc">Pessoa física</th><th></th></tr></thead>
@@ -5585,7 +5654,7 @@ function renderFinanceiroMesDetail(){
               <td class="numc">${Number(f.valorSemAlterar)?fmtBRL(f.valorSemAlterar):'—'}</td>
               <td class="numc" style="${f.valorAltera>0?'color:var(--warn)':f.valorAltera<0?'color:var(--ok)':''}">${Number(f.valorAltera)?fmtBRL(f.valorAltera):'—'}</td>
               <td class="numc">${Number(f.valorPessoaFisica)?fmtBRL(f.valorPessoaFisica):'—'}</td>
-              <td onclick="event.stopPropagation()">${podeEditar()?`<button class="icon-btn" onclick="deleteFinanceiro('${f.id}')">${ICONS.trash}</button>`:''}</td>
+              <td onclick="event.stopPropagation()">${podeEditar('financeiro')?`<button class="icon-btn" onclick="deleteFinanceiro('${f.id}')">${ICONS.trash}</button>`:''}</td>
             </tr>`).join('')}
         </tbody>
       </table></div>`}
@@ -5605,7 +5674,7 @@ function renderLembretes(){
   return `
     <div class="topbar">
       <div><h1>Lembretes</h1><div class="sub">${state.lembretes.length} lembrete(s) cadastrado(s)</div></div>
-      <div class="actions">${podeEditar()?`<button class="btn btn-primary" onclick="openLembreteForm()">${ICONS.plus}Novo lembrete</button>`:''}</div>
+      <div class="actions">${podeEditar('lembretes')?`<button class="btn btn-primary" onclick="openLembreteForm()">${ICONS.plus}Novo lembrete</button>`:''}</div>
     </div>
     <div class="toolbar">
       <div class="search">${ICONS.search}<input id="lembrete-search-input" placeholder="Buscar por lembrete ou descrição..." value="${esc(state.lembreteSearch)}" oninput="state.lembreteSearch=this.value; render();"></div>
@@ -5619,7 +5688,7 @@ function renderLembretes(){
     <div class="card">
       ${state.lembretes.length===0 ? `
       <div class="empty"><h3>Nenhum lembrete cadastrado</h3><p>Cadastre lembretes com data, horário e aviso por e-mail e/ou WhatsApp.</p>
-        ${podeEditar()?`<button class="btn btn-primary" onclick="openLembreteForm()">${ICONS.plus}Novo lembrete</button>`:''}</div>
+        ${podeEditar('lembretes')?`<button class="btn btn-primary" onclick="openLembreteForm()">${ICONS.plus}Novo lembrete</button>`:''}</div>
       ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou o filtro.</p></div>` : `
       <div class="table-wrap"><table>
         <thead><tr><th>Lembrete</th><th>Descrição</th><th>Data do aviso</th><th>Horário</th><th>Antecedência</th><th>Canais</th><th>Situação</th><th></th></tr></thead>
@@ -5634,9 +5703,9 @@ function renderLembretes(){
               <td>${[l.canalEmail?ICONS.mail:'', l.canalWhatsapp?ICONS.whatsapp:''].filter(Boolean).join(' ')||'—'}</td>
               <td>${lembreteStatusPill(l)}</td>
               <td onclick="event.stopPropagation()" style="white-space:nowrap">
-                ${podeEditar()&&(!l.status||l.status==='Pendente')?`<button class="icon-btn" title="Marcar como concluído" onclick="marcarLembreteConcluido('${l.id}')">${ICONS.check}</button>`:''}
-                ${podeEditar()&&(l.status==='Concluido'||l.status==='Cancelado')?`<button class="icon-btn" title="Reabrir" onclick="reabrirLembrete('${l.id}')">${ICONS.back}</button>`:''}
-                ${podeEditar()?`<button class="icon-btn" onclick="deleteLembrete('${l.id}')">${ICONS.trash}</button>`:''}
+                ${podeEditar('lembretes')&&(!l.status||l.status==='Pendente')?`<button class="icon-btn" title="Marcar como concluído" onclick="marcarLembreteConcluido('${l.id}')">${ICONS.check}</button>`:''}
+                ${podeEditar('lembretes')&&(l.status==='Concluido'||l.status==='Cancelado')?`<button class="icon-btn" title="Reabrir" onclick="reabrirLembrete('${l.id}')">${ICONS.back}</button>`:''}
+                ${podeEditar('lembretes')?`<button class="icon-btn" onclick="deleteLembrete('${l.id}')">${ICONS.trash}</button>`:''}
               </td>
             </tr>`).join('')}
         </tbody>
