@@ -279,7 +279,7 @@ td.wrap-desc, .wrap-desc{ min-width:200px; max-width:320px; white-space:normal; 
   #print-area .doc-pedido-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:16pt; margin-bottom:12pt; }
   #print-area .doc-pedido-top .doc-fields{ margin-bottom:0; flex:1; }
   #print-area table.doc-mini{ width:auto; flex-shrink:0; font-size:8pt; }
-  #print-area table.doc-mini th, #print-area table.doc-mini td{ padding:4pt 10pt; min-width:34pt; }
+  #print-area table.doc-mini th, #print-area table.doc-mini td{ padding:4pt 12pt; min-width:42pt; }
   #print-area table.doc-mini th{ background:#f4f4f4; }
   #print-area table.doc-table-pedido th:nth-child(3), #print-area table.doc-table-pedido td:nth-child(3){ width:34%; }
   #print-area th{ background:#ebebeb !important; color:#141414; font-weight:bold; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -4816,7 +4816,7 @@ function montarPdfPedidoConteudo(doc, left, p, itens){
   doc.setDrawColor(210); doc.line(left, y, rightX, y);
   y += 20;
 
-  const miniColW = [45,35,55];
+  const miniColW = [50,40,60];
   const miniW = miniColW[0]+miniColW[1]+miniColW[2];
   const miniX = rightX - miniW;
   doc.autoTable({
@@ -4836,6 +4836,7 @@ function montarPdfPedidoConteudo(doc, left, p, itens){
     ? p.localEntregaNome + (p.localEntregaEndereco?' — '+p.localEntregaEndereco:'') + (p.localEntregaCidade?', '+p.localEntregaCidade+(p.localEntregaEstado?'/'+p.localEntregaEstado:''):'')
     : '';
   const ataDoPedido = ataById(p.ataId);
+  const maxValueWidth = miniX - (left+95) - 8;
   [['Empresa', ataDoPedido && ataDoPedido.empresaNome], ['Órgão', p.orgao], ['Ata/Contrato', p.ataNumero],
    ['Ordem de compra', p.ordemCompra], ['Empenho', p.empenho], ['Local de entrega', localEntregaTexto], ['Status', STATUS_PEDIDO_LABEL[p.status]||p.status],
    ['Valor total', pdfBRL(valorTotalCalc)], ['Saldo a separar', pdfBRL(saldoSeparar)], ['Saldo a entregar', pdfBRL(saldoEntregar)],
@@ -4844,7 +4845,12 @@ function montarPdfPedidoConteudo(doc, left, p, itens){
     doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100);
     doc.text(label+':', left, y);
     doc.setFont('helvetica','bold'); doc.setTextColor(20);
-    doc.text(value===undefined||value===null||value===''?'—':String(value), left+95, y);
+    let valueText = value===undefined||value===null||value===''?'—':String(value);
+    if(y<=miniEndY && maxValueWidth>0){
+      const linhasValor = doc.splitTextToSize(valueText, maxValueWidth);
+      if(linhasValor.length>1) valueText = linhasValor[0].replace(/[.,;\s]+$/,'')+'…';
+    }
+    doc.text(valueText, left+95, y);
     y += 13;
   });
   y = Math.max(y, miniEndY+10);
