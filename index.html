@@ -2069,6 +2069,11 @@ function statusRecebidoOverride(status, quantidadePedida){
   if(status==='Recebido') return {quantidadeRecebida:quantidadePedida};
   return null;
 }
+function statusRecebidoComputado(totalRecebido, totalQtd){
+  if(totalRecebido<=0) return 'Lancado';
+  if(totalRecebido>=totalQtd) return 'Recebido';
+  return 'Recebido Parcial';
+}
 
 async function recomputePedidoCompraCache(id, statusOverride){
   const snap = await state.db.collection('pedidosCompra/'+id+'/itens').get();
@@ -2148,7 +2153,18 @@ async function commitPedidoCompraItemQuantity(pedidoCompra, itemId, el, maxQty){
   try{
     const itemAntes = state.currentPedidoCompraItens.find(x=>x.id===itemId) || {};
     await state.db.doc('pedidosCompra/'+pedidoCompra.id+'/itens/'+itemId).update({quantidadeRecebida: value});
-    await recomputePedidoCompraCache(pedidoCompra.id, pedidoCompra.status);
+    let statusAtual = pedidoCompra.status;
+    if(statusAtual!=='Cancelado'){
+      const itensSnap = await state.db.collection('pedidosCompra/'+pedidoCompra.id+'/itens').get();
+      let totalQtd=0, totalRec=0;
+      itensSnap.docs.forEach(d=>{ const x=d.data(); const q=Number(x.quantidade)||0; totalQtd+=q; totalRec+=Math.min(Number(x.quantidadeRecebida)||0,q); });
+      const novoStatus = statusRecebidoComputado(totalRec, totalQtd);
+      if(novoStatus!==statusAtual){
+        await state.db.doc('pedidosCompra/'+pedidoCompra.id).update({status: novoStatus, atualizadoPor: state.nome||'—', atualizadoEm: new Date().toISOString()});
+        statusAtual = novoStatus;
+      }
+    }
+    await recomputePedidoCompraCache(pedidoCompra.id, statusAtual);
     await loadPedidoCompraItens(pedidoCompra.id);
     if(itemAntes.origemPedidoId && itemAntes.origemPedidoItemId){
       const pedidosAfetados = await sincronizarSeparacoesComRecebimentos([{origemPedidoId:itemAntes.origemPedidoId, origemPedidoItemId:itemAntes.origemPedidoItemId}]);
@@ -2181,7 +2197,11 @@ async function updatePedidoCompraStatus(pedidoCompra, newStatus){
     const pedidosAfetados = await sincronizarSeparacoesComRecebimentos(chaves);
     for(const pid of pedidosAfetados){ await reconciliarPedidoAposRecebimento(pid); }
     if(state.saldoPendenteCompraLoaded){ loadSaldoPendenteCompras(); }
-    toast(pedidosAfetados.size>0 ? `Status atualizado. Separação atualizada em ${pedidosAfetados.size} pedido(s) vinculado(s).` : 'Status atualizado.');
+    if(newStatus==='Recebido Parcial'){
+      toast('Status atualizado. Informe a quantidade recebida de cada item abaixo — o status se ajusta automaticamente.');
+    }else{
+      toast(pedidosAfetados.size>0 ? `Status atualizado. Separação atualizada em ${pedidosAfetados.size} pedido(s) vinculado(s).` : 'Status atualizado.');
+    }
   }catch(e){
     toast('Não foi possível salvar: '+(e && e.message ? e.message : 'erro desconhecido'), 'crit');
   }
