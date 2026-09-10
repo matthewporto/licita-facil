@@ -5551,9 +5551,13 @@ function renderLucro(){
   const ano = state.lucroAno;
   const dadosMeses = Array.from({length:12}, (_,i)=>{
     const mes = i+1;
+    const faturasMes = faturasDoMes(ano, mes);
+    const faturamento = faturasMes.reduce((s,f)=>s+(Number(f.valorTotal)||0),0);
     const bruto = lucroBrutoMes(ano, mes);
     const despesas = despesasTotalMes(ano, mes);
-    return { mes, bruto, despesas, liquido: bruto-despesas, faturasCount: faturasDoMes(ano, mes).length };
+    const liquido = bruto-despesas;
+    const margem = faturamento>0 ? (liquido/faturamento*100) : null;
+    return { mes, faturamento, bruto, despesas, liquido, margem, faturasCount: faturasMes.length };
   });
   const brutoAnual = dadosMeses.reduce((s,m)=>s+m.bruto,0);
   const despesasAnual = dadosMeses.reduce((s,m)=>s+m.despesas,0);
@@ -5577,7 +5581,7 @@ function renderLucro(){
     </div>
     <div class="card">
       <div class="table-wrap"><table>
-        <thead><tr><th>Mês</th><th>Faturas</th><th>Lucro bruto</th><th>Despesas</th><th>Lucro líquido</th><th style="min-width:120px">​</th></tr></thead>
+        <thead><tr><th>Mês</th><th>Faturas</th><th>Faturamento</th><th>Lucro bruto</th><th>Despesas</th><th>Margem %</th><th>Lucro líquido</th><th style="min-width:120px">​</th></tr></thead>
         <tbody>
           ${dadosMeses.map(m=>{
             const barPct = Math.min(100, Math.abs(m.liquido)/maxAbsLiquido*100);
@@ -5585,8 +5589,10 @@ function renderLucro(){
             return `<tr onclick="setView('lucro-detail',{ano:${ano},mes:${m.mes}})">
               <td>${mesLabel(m.mes)}${mesAtualNum===m.mes?' <span class="pill neutral" style="margin-left:4px">atual</span>':''}</td>
               <td class="num">${m.faturasCount}</td>
+              <td class="num">${fmtBRL(m.faturamento)}</td>
               <td class="num">${fmtBRL(m.bruto)}</td>
               <td class="num">${fmtBRL(m.despesas)}</td>
+              <td class="num" style="color:${m.margem===null?'inherit':(m.margem<0?'var(--crit)':'var(--ok)')}">${m.margem===null?'—':m.margem.toFixed(1)+'%'}</td>
               <td class="num" style="color:${m.liquido<0?'var(--crit)':'var(--ok)'}">${fmtBRL(m.liquido)}</td>
               <td><div style="background:var(--surface-2); border-radius:4px; overflow:hidden; height:8px; width:100%"><div style="width:${barPct}%; height:100%; background:${barColor}"></div></div></td>
             </tr>`;
