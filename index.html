@@ -4345,7 +4345,7 @@ function renderPedidosList(){
         ${podeAcao('pedidos','criar')?`<button class="btn btn-primary" onclick="openPedidoForm()">${ICONS.plus}Novo Pedido</button>`:''}</div>
       ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou os filtros.</p></div>` : `
       <div class="table-wrap"><table>
-        <thead><tr><th style="width:1%"><input type="checkbox" onclick="event.stopPropagation()" onchange="toggleTodosPedidosSelecionados()" ${rows.length>0 && rows.every(p=>state.pedidosSelecionados.has(p.id))?'checked':''}></th><th>Empresa</th><th>Data</th><th>Ata/Contrato</th><th>Órgão</th><th>Cidade</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Valor</th><th>Saldo a entregar</th><th>Prazo de entrega</th><th>Status</th></tr></thead>
+        <thead><tr><th style="width:1%"><input type="checkbox" onclick="event.stopPropagation()" onchange="toggleTodosPedidosSelecionados()" ${rows.length>0 && rows.every(p=>state.pedidosSelecionados.has(p.id))?'checked':''}></th><th>Empresa</th><th>Data</th><th>Ata/Contrato</th><th>Órgão</th><th>Cidade</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Valor</th><th>Saldo a entregar</th><th>Prazo de entrega</th><th>Status</th><th>Impresso</th></tr></thead>
         <tbody>
           ${rows.map(p=>`
             <tr onclick="setView('pedido-detail',{pedidoId:'${p.id}'})">
@@ -4362,6 +4362,7 @@ function renderPedidosList(){
               <td class="num">${fmtBRL(pedidoSaldoEntregarCache(p))}</td>
               <td>${prazoEntregaPill(p)}</td>
               <td>${pedidoStatusPillSelect(p)}</td>
+              <td>${p.impresso?`<span class="pill neutral" title="Impresso em ${fmtDate(p.dataImpressao)}">Impresso</span>`:'—'}</td>
             </tr>`).join('')}
         </tbody>
       </table></div>`}
@@ -4409,7 +4410,7 @@ function renderPedidoDetail(){
     <div class="topbar">
       <div>
         <button class="btn btn-ghost btn-sm no-print" style="margin-bottom:10px" onclick="setView('pedidos')">${ICONS.back} Voltar</button>
-        <h1>Pedido — ${fmtDate(p.dataPedido)}</h1>
+        <h1>Pedido — ${fmtDate(p.dataPedido)}${p.impresso?` <span class="pill neutral" title="Impresso em ${fmtDate(p.dataImpressao)}" style="vertical-align:middle;margin-left:6px">Impresso</span>`:''}</h1>
         <div class="sub">${esc(p.orgao)||'—'} · Ata ${ata?`<span style="cursor:pointer;color:var(--accent);text-decoration:underline" onclick="setView('ata-detail',{ataId:'${p.ataId}'})">${esc(p.ataNumero)}</span>`:esc(p.ataNumero)||'—'}${ata&&ata.empresaNome?` <span style="color:var(--ink-faint)">· via</span> ${esc(ata.empresaNome)}`:''}</div>
       </div>
       <div class="actions no-print">
@@ -5077,13 +5078,20 @@ async function salvarPdf(doc, filename, downloadsApi){
   try{
     await downloadsApi.save({filename, data:blob});
     toast('PDF gerado com sucesso.');
+    return true;
   }catch(e){
     const code = e && e.code;
     if(code==='declined'){ /* usuário cancelou o download, nada a avisar */ }
     else if(code==='too_large') toast('O PDF ficou grande demais para baixar.', 'crit');
     else if(code==='rate_limited') toast('Aguarde um instante e tente novamente.', 'crit');
     else toast('Não foi possível baixar o PDF.', 'crit');
+    return false;
   }
+}
+
+async function marcarPedidoComoImpresso(pedidoId){
+  if(!pedidoId) return;
+  try{ await state.db.doc('pedidos/'+pedidoId).update({ impresso:true, dataImpressao: todayISO() }); }catch(e){}
 }
 
 function htmlCamposImpressao(campos){
@@ -5215,9 +5223,11 @@ function montarImpressaoFatura(){
   return header + htmlCamposImpressao(campos) + htmlTabelaImpressao(colunas, linhas);
 }
 
+let __pedidoImprimindoId = null;
 function imprimirPagina(){
   let html = null, landscape = true;
-  if(state.view==='pedido-detail'){ html = montarImpressaoPedido(); landscape = false; }
+  __pedidoImprimindoId = null;
+  if(state.view==='pedido-detail'){ html = montarImpressaoPedido(); landscape = false; __pedidoImprimindoId = state.currentPedidoId; }
   else if(state.view==='pedidocompra-detail'){ html = montarImpressaoPedidoCompra(); landscape = true; }
   else if(state.view==='fatura-detail'){ html = montarImpressaoFatura(); landscape = true; }
   else if(state.view==='ata-detail'){ html = montarImpressaoAta(); landscape = true; }
@@ -5229,7 +5239,10 @@ function imprimirPagina(){
   document.body.classList.add('printing-doc');
   window.print();
 }
-window.addEventListener('afterprint', ()=>{ document.body.classList.remove('printing-doc'); });
+window.addEventListener('afterprint', ()=>{
+  document.body.classList.remove('printing-doc');
+  if(__pedidoImprimindoId){ marcarPedidoComoImpresso(__pedidoImprimindoId); __pedidoImprimindoId = null; }
+});
 
 async function abrirImpressao(){
   const prep = await prepararPdf();
@@ -5244,7 +5257,8 @@ async function abrirImpressao(){
   else if(state.view==='fatura-detail') filename = montarPdfFatura(doc, left);
   else if(state.view==='ata-detail') filename = montarPdfAta(doc, left);
   if(!filename){ toast('Não é possível gerar PDF nesta tela.', 'crit'); return; }
-  await salvarPdf(doc, filename, downloadsApi);
+  const ok = await salvarPdf(doc, filename, downloadsApi);
+  if(ok && state.view==='pedido-detail'){ marcarPedidoComoImpresso(state.currentPedidoId); }
 }
 
 async function baixarPdfListaPedidosSelecionados(){
