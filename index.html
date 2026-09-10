@@ -2749,7 +2749,7 @@ async function openFaturaForm(pedidoOrigem){
       return;
     }
     area.innerHTML = `<div class="table-wrap"><table>
-      <thead><tr><th>Descrição</th><th>Marca</th><th>Un.</th><th>Quantidade</th><th>Valor unit. (R$)</th><th></th></tr></thead>
+      <thead><tr><th>Descrição</th><th>Marca</th><th>Un.</th><th>Quantidade</th><th>Valor unit. (R$)</th><th>Valor de custo (R$)</th><th></th></tr></thead>
       <tbody>
         ${window.__faturaManualRows.map((row,i)=>`
           <tr>
@@ -2758,20 +2758,22 @@ async function openFaturaForm(pedidoOrigem){
             <td><input data-row="${i}" data-field="unidade" value="${esc(row.unidade)}" style="width:64px" placeholder="UN"></td>
             <td><input type="number" min="0" step="0.01" data-row="${i}" data-field="quantidade" value="${row.quantidade||''}" style="width:80px" placeholder="0"></td>
             <td><input type="number" min="0" step="0.01" data-row="${i}" data-field="valorUnitario" value="${row.valorUnitario||''}" style="width:90px" placeholder="0,00"></td>
+            <td><input type="number" min="0" step="0.01" data-row="${i}" data-field="valorCusto" value="${row.valorCusto||''}" style="width:90px" placeholder="0,00"></td>
             <td><button type="button" class="icon-btn" onclick="faturaRemoveRow(${i})">${ICONS.trash}</button></td>
           </tr>`).join('')}
       </tbody>
-    </table></div>`;
+    </table></div>
+    <p style="font-size:.72rem;color:var(--ink-faint);margin:6px 0 0">Preencha o "Valor de custo" para o item entrar no cálculo de lucro deste mês.</p>`;
     area.querySelectorAll('input[data-row]').forEach(inp=>{
       inp.addEventListener('change', e=>{
         const r = Number(e.target.dataset.row);
         const f = e.target.dataset.field;
-        window.__faturaManualRows[r][f] = (f==='quantidade'||f==='valorUnitario') ? Number(e.target.value)||0 : e.target.value;
+        window.__faturaManualRows[r][f] = (f==='quantidade'||f==='valorUnitario'||f==='valorCusto') ? Number(e.target.value)||0 : e.target.value;
       });
     });
   }
   window.faturaAddRow = function(){
-    window.__faturaManualRows.push({descricao:'', marca:'', unidade:'', quantidade:0, valorUnitario:0});
+    window.__faturaManualRows.push({descricao:'', marca:'', unidade:'', quantidade:0, valorUnitario:0, valorCusto:0});
     renderRows();
   };
   window.faturaRemoveRow = function(i){
@@ -5612,6 +5614,7 @@ function renderLucroDetail(){
         <div class="sub">${faturas.length} fatura(s) neste mês</div>
       </div>
       <div class="actions">
+        ${podeAcao('faturamento','criar')?`<button class="btn btn-ghost" onclick="openFaturaForm()">${ICONS.sheet}Fatura avulsa</button>`:''}
         ${podeAcao('lucro','criar')?`<button class="btn btn-primary" onclick="openDespesaForm('${anoMesStr(ano,mes)}')">${ICONS.plus}Nova despesa</button>`:''}
       </div>
     </div>
