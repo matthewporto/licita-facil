@@ -276,6 +276,11 @@ td.wrap-desc, .wrap-desc{ min-width:200px; max-width:320px; white-space:normal; 
   #print-area table.doc-table-pedido{ font-size:10pt; }
   #print-area th, #print-area td{ border:1px solid #ccc; padding:3pt 4pt; text-align:left; }
   #print-area table.doc-table-pedido th, #print-area table.doc-table-pedido td{ padding:4pt 5pt; }
+  #print-area .doc-pedido-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:16pt; margin-bottom:12pt; }
+  #print-area .doc-pedido-top .doc-fields{ margin-bottom:0; flex:1; }
+  #print-area table.doc-mini{ width:auto; flex-shrink:0; font-size:8pt; }
+  #print-area table.doc-mini th, #print-area table.doc-mini td{ padding:4pt 10pt; min-width:34pt; }
+  #print-area table.doc-mini th{ background:#f4f4f4; }
   #print-area table.doc-table-pedido th:nth-child(3), #print-area table.doc-table-pedido td:nth-child(3){ width:34%; }
   #print-area th{ background:#ebebeb !important; color:#141414; font-weight:bold; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 }
@@ -4811,6 +4816,22 @@ function montarPdfPedidoConteudo(doc, left, p, itens){
   doc.setDrawColor(210); doc.line(left, y, rightX, y);
   y += 20;
 
+  const miniColW = [45,35,55];
+  const miniW = miniColW[0]+miniColW[1]+miniColW[2];
+  const miniX = rightX - miniW;
+  doc.autoTable({
+    startY: y,
+    head: [['DATA','NF','VALOR']],
+    body: Array.from({length:6}, ()=>['','','']),
+    margin: { left: miniX, right: left },
+    tableWidth: miniW,
+    columnStyles: { 0:{cellWidth:miniColW[0]}, 1:{cellWidth:miniColW[1]}, 2:{cellWidth:miniColW[2]} },
+    styles: { fontSize:8, cellPadding:4, minCellHeight:14, lineColor:[150,150,150], lineWidth:0.5, textColor:20 },
+    headStyles: { fillColor:[244,244,244], textColor:20, fontStyle:'bold', lineColor:[150,150,150], lineWidth:0.5 },
+    theme: 'grid',
+  });
+  const miniEndY = doc.lastAutoTable.finalY;
+
   const localEntregaTexto = p.localEntregaNome
     ? p.localEntregaNome + (p.localEntregaEndereco?' — '+p.localEntregaEndereco:'') + (p.localEntregaCidade?', '+p.localEntregaCidade+(p.localEntregaEstado?'/'+p.localEntregaEstado:''):'')
     : '';
@@ -4826,7 +4847,7 @@ function montarPdfPedidoConteudo(doc, left, p, itens){
     doc.text(value===undefined||value===null||value===''?'—':String(value), left+95, y);
     y += 13;
   });
-  y += 6;
+  y = Math.max(y, miniEndY+10);
 
   const colunas = ['Item','Lote','Descrição','Marca','Un.','Quantidade','Separada','Entregue','Saldo','Valor unit.','Valor de custo','Lucro','Margem','Subtotal'];
   const linhas = ordenarPorNumeroItem(itens).map(it=>{
@@ -5116,7 +5137,10 @@ function montarImpressaoPedidoConteudo(p, itens){
       + '<div class="doc-box"><span class="label">PRAZO DE ENTREGA</span><b>'+esc(p.dataLimiteEntrega?fmtDate(p.dataLimiteEntrega):'Sem prazo definido')+'</b></div>'
     + '</div>'
   + '</div><hr class="doc-hr">';
-  return header + htmlCamposImpressao(campos) + htmlTabelaImpressao(colunas, linhas, 'doc-table-pedido');
+  const miniTabela = '<table class="doc-mini"><thead><tr><th>DATA</th><th>NF</th><th>VALOR</th></tr></thead><tbody>'
+    + Array.from({length:6}, ()=>'<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>').join('')
+    + '</tbody></table>';
+  return header + '<div class="doc-pedido-top">' + htmlCamposImpressao(campos) + miniTabela + '</div>' + htmlTabelaImpressao(colunas, linhas, 'doc-table-pedido');
 }
 
 function montarImpressaoPedidoCompra(){
