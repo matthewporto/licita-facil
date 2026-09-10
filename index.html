@@ -3310,6 +3310,7 @@ function openCustoMinimoForm(existing){
         <button class="icon-btn" onclick="closePanel()">${ICONS.close}</button>
       </div>
       <form id="custo-minimo-form" class="panel-body">
+        ${existing?`<p style="font-size:.76rem;color:var(--ink-faint);margin:-6px 0 0">Última atualização: ${fmtDate(c.dataAtualizacao)||'—'}</p>`:''}
         <div class="field-grid">
           <div class="field span2"><label>Item</label>
             <input name="item" value="${esc(c.item)}" required>
@@ -3402,6 +3403,7 @@ function openCustoMinimoForm(existing){
       outraDisp: fd.get('outraDisp')===''?null:Number(fd.get('outraDisp')),
       margemVenda: fd.get('margemVenda')===''?25:Number(fd.get('margemVenda')),
       numeroUnidades: fd.get('numeroUnidades')===''?null:Number(fd.get('numeroUnidades')),
+      dataAtualizacao: todayISO(),
     };
     if(existing){ await updateCustoMinimo(existing.id, data); } else { await createCustoMinimo(data); }
     closePanel();
@@ -5703,10 +5705,11 @@ function renderCustosMinimos(){
         ${podeAcao('custosMinimos','criar')?`<button class="btn btn-primary" onclick="openCustoMinimoForm()">${ICONS.plus}Novo item</button>`:''}</div>
       ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca.</p></div>` : `
       <div class="table-wrap"><table>
-        <thead><tr><th>Item</th><th>Fabricante</th><th>Marca</th><th>Valor do item</th><th>Frete</th><th>IPI</th><th>Difal</th><th>Outra Disp.</th><th>Custo</th><th>Custo Unit.</th><th>Margem</th><th>Mínimo</th><th>Nº Unid.</th><th>Mínimo Unit.</th><th></th></tr></thead>
+        <thead><tr><th>Data</th><th>Item</th><th>Fabricante</th><th>Marca</th><th>Valor do item</th><th>Frete</th><th>IPI</th><th>Difal</th><th>Outra Disp.</th><th>Custo</th><th>Custo Unit.</th><th>Margem</th><th>Mínimo</th><th>Nº Unid.</th><th>Mínimo Unit.</th><th></th></tr></thead>
         <tbody>
           ${rows.map(c=>`
             <tr onclick='openCustoMinimoForm(${JSON.stringify(c).replace(/'/g,"&#39;")})'>
+              <td style="white-space:nowrap">${fmtDate(c.dataAtualizacao)||'—'}</td>
               <td>${esc(c.item)}</td>
               <td>${esc(c.fabricante)||'—'}</td>
               <td>${esc(c.marca)||'—'}</td>
