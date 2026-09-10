@@ -1247,7 +1247,7 @@ function pedidoCompraById(id){ return state.pedidosCompra.find(p=>p.id===id); }
 async function loadSaldoPendenteCompras(){
   state.saldoPendenteCompraLoading = true;
   render();
-  const pedidosAbertos = state.pedidos.filter(p=>p.status==='Separado' || p.status==='Entregue Parcial');
+  const pedidosAbertos = state.pedidos.filter(p=>p.status==='Separado Parcial' || p.status==='Entregue Parcial');
   const itensSnaps = await Promise.all(pedidosAbertos.map(p=>state.db.collection('pedidos/'+p.id+'/itens').get()));
   const linhas = [];
   pedidosAbertos.forEach((p,i)=>{
