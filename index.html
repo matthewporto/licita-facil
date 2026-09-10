@@ -279,7 +279,7 @@ td.wrap-desc, .wrap-desc{ min-width:200px; max-width:320px; white-space:normal; 
   #print-area .doc-pedido-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:16pt; margin-bottom:12pt; }
   #print-area .doc-pedido-top .doc-fields{ margin-bottom:0; flex:1; }
   #print-area table.doc-mini{ width:auto; flex-shrink:0; font-size:8pt; }
-  #print-area table.doc-mini th, #print-area table.doc-mini td{ padding:4pt 18pt; min-width:60pt; }
+  #print-area table.doc-mini th, #print-area table.doc-mini td{ padding:4pt 24pt; min-width:80pt; }
   #print-area table.doc-mini th{ background:#f4f4f4; }
   #print-area table.doc-table-pedido th:nth-child(3), #print-area table.doc-table-pedido td:nth-child(3){ width:34%; }
   #print-area th{ background:#ebebeb !important; color:#141414; font-weight:bold; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
@@ -4816,7 +4816,7 @@ function montarPdfPedidoConteudo(doc, left, p, itens){
   doc.setDrawColor(210); doc.line(left, y, rightX, y);
   y += 20;
 
-  const miniColW = [72,56,88];
+  const miniColW = [95,75,115];
   const miniW = miniColW[0]+miniColW[1]+miniColW[2];
   const miniX = rightX - miniW;
   doc.autoTable({
