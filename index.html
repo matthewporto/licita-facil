@@ -264,6 +264,7 @@ td.wrap-desc, .wrap-desc{ min-width:200px; max-width:320px; white-space:normal; 
   #print-area .doc-header{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:14pt; }
   #print-area .doc-title{ font-size:18pt; font-weight:bold; color:#141414; }
   #print-area .doc-subtitle{ font-size:12pt; color:#464646; margin-top:4pt; }
+  #print-area .doc-cnpj{ font-size:10pt; color:#646464; margin-top:2pt; }
   #print-area .doc-header-right{ text-align:right; }
   #print-area .doc-box{ margin-bottom:6pt; }
   #print-area .doc-box .label{ display:block; font-size:7pt; color:#646464; text-transform:uppercase; letter-spacing:.03em; }
@@ -4848,6 +4849,12 @@ function montarPdfPedidoConteudo(doc, left, p, itens){
   doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(20);
   doc.text(fmtDate(p.dataPedido)||'—', rightX, y-9, {align:'right'});
 
+  if(p.cnpjFaturamento){
+    y += 15;
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.setTextColor(90);
+    doc.text('CNPJ: '+p.cnpjFaturamento, left, y);
+  }
+
   y += 22;
   doc.setFont('helvetica','normal'); doc.setFontSize(12); doc.setTextColor(70);
   doc.text(p.secretaria || '—', left, y);
@@ -5188,8 +5195,9 @@ function montarImpressaoPedidoConteudo(p, itens){
     ];
   });
 
+  const cnpjLinha = p.cnpjFaturamento ? '<div class="doc-cnpj">CNPJ: '+esc(p.cnpjFaturamento)+'</div>' : '';
   const header = '<div class="doc-header">'
-    + '<div><div class="doc-title">'+esc(p.cidade||'—')+'</div><div class="doc-subtitle">'+esc(p.secretaria||'—')+'</div></div>'
+    + '<div><div class="doc-title">'+esc(p.cidade||'—')+'</div>'+cnpjLinha+'<div class="doc-subtitle">'+esc(p.secretaria||'—')+'</div></div>'
     + '<div class="doc-header-right">'
       + '<div class="doc-box"><span class="label">DATA</span><b>'+esc(fmtDate(p.dataPedido)||'—')+'</b></div>'
       + '<div class="doc-box"><span class="label">PRAZO DE ENTREGA</span><b>'+esc(p.dataLimiteEntrega?fmtDate(p.dataLimiteEntrega):'Sem prazo definido')+'</b></div>'
