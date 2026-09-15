@@ -1065,14 +1065,28 @@ function abrirImportarItensAta(ata){
 function pedidoById(id){ return state.pedidos.find(p=>p.id===id); }
 
 async function adjustItemConsumption(ataId, itensPedido, sign){
-  for(const it of itensPedido){
-    if(!it.itemId) continue;
-    const ref = state.db.doc('atas/'+ataId+'/itens/'+it.itemId);
-    const snap = await ref.get();
-    if(!snap.exists) continue;
-    const cur = snap.data();
-    const nova = Math.max(0, (Number(cur.quantidadeConsumida)||0) + sign*(Number(it.quantidade)||0));
-    await ref.update({quantidadeConsumida: nova});
+  const deltaByItemId = {};
+  itensPedido.forEach(it=>{
+    if(!it.itemId) return;
+    deltaByItemId[it.itemId] = (deltaByItemId[it.itemId]||0) + sign*(Number(it.quantidade)||0);
+  });
+  const itemIds = Object.keys(deltaByItemId);
+  if(itemIds.length===0) return;
+  const refs = itemIds.map(id=>state.db.doc('atas/'+ataId+'/itens/'+id));
+  const snaps = await Promise.all(refs.map(r=>r.get()));
+  const chunkSize = 450;
+  for(let i=0;i<itemIds.length;i+=chunkSize){
+    const batch = state.db.batch();
+    let any = false;
+    for(let j=i;j<Math.min(i+chunkSize, itemIds.length);j++){
+      const snap = snaps[j];
+      if(!snap.exists) continue;
+      const cur = snap.data();
+      const nova = Math.max(0, (Number(cur.quantidadeConsumida)||0) + deltaByItemId[itemIds[j]]);
+      batch.update(refs[j], {quantidadeConsumida: nova});
+      any = true;
+    }
+    if(any) await batch.commit();
   }
 }
 
@@ -1138,11 +1152,15 @@ async function createPedido(ata, itensSelecionados, meta){
     ...meta, prazoEntregaDias, dataLimiteEntrega, valorTotal, valorSeparado:0, saldoSeparar:valorTotal, valorEntregue:0, saldoEntregar:valorTotal,
     criadoPor: state.nome||'—', criadoEm: new Date().toISOString(),
   }), 'Pedido criado.');
-  for(const it of itensSelecionados){
-    const override = statusQuantityOverride(meta.status, Number(it.quantidade)||0, 0);
-    await state.db.collection('pedidos/'+pedidoDoc.id+'/itens').add({
-      quantidadeSeparada:0, quantidadeEntregue:0, ...it, ...(override||{}),
-    });
+  const itensColecao = state.db.collection('pedidos/'+pedidoDoc.id+'/itens');
+  const chunkSize = 450;
+  for(let i=0;i<itensSelecionados.length;i+=chunkSize){
+    const batch = state.db.batch();
+    for(const it of itensSelecionados.slice(i, i+chunkSize)){
+      const override = statusQuantityOverride(meta.status, Number(it.quantidade)||0, 0);
+      batch.set(itensColecao.doc(), { quantidadeSeparada:0, quantidadeEntregue:0, ...it, ...(override||{}) });
+    }
+    await batch.commit();
   }
   await adjustItemConsumption(ata.id, itensSelecionados, +1);
   await recomputeAtaCache(ata.id);
@@ -1222,16 +1240,26 @@ async function updatePedido(pedido, novosItens, meta){
     });
 
     if(!wasCancelado){ await adjustItemConsumption(pedido.ataId, itensAntigos, -1); }
-    for(const d of itensSnap.docs){ await state.db.doc('pedidos/'+pedido.id+'/itens/'+d.id).delete(); }
-    for(const it of novosItens){
+
+    const itensColecao = state.db.collection('pedidos/'+pedido.id+'/itens');
+    const opsDelete = itensSnap.docs.map(d=>({tipo:'delete', ref: state.db.doc('pedidos/'+pedido.id+'/itens/'+d.id)}));
+    const opsAdd = novosItens.map(it=>{
       const qtd = Number(it.quantidade)||0;
       const quantidadeSeparada = Math.min(prevSeparadaByItemId[it.itemId]||0, qtd);
       const quantidadeEntregue = Math.min(prevEntregueByItemId[it.itemId]||0, qtd);
       const override = statusQuantityOverride(meta.status, qtd, quantidadeEntregue);
-      await state.db.collection('pedidos/'+pedido.id+'/itens').add({
-        ...it, quantidadeSeparada, quantidadeEntregue, ...(override||{}),
-      });
+      return { tipo:'set', ref: itensColecao.doc(), data: { ...it, quantidadeSeparada, quantidadeEntregue, ...(override||{}) } };
+    });
+    const todasOps = [...opsDelete, ...opsAdd];
+    const chunkSize = 450;
+    for(let i=0;i<todasOps.length;i+=chunkSize){
+      const batch = state.db.batch();
+      for(const op of todasOps.slice(i, i+chunkSize)){
+        if(op.tipo==='delete') batch.delete(op.ref); else batch.set(op.ref, op.data);
+      }
+      await batch.commit();
     }
+
     if(!willBeCancelado){ await adjustItemConsumption(pedido.ataId, novosItens, +1); }
 
     const valorTotal = novosItens.reduce((s,it)=>s+(Number(it.valorUnitario)||0)*(Number(it.quantidade)||0),0);
@@ -1854,6 +1882,8 @@ function openPedidoForm(ataId){
   wirePedidoDuplicadoCheck(document.getElementById('pedido-empenho-input'), 'empenho', null);
 
   document.getElementById('pedido-form-submit').onclick = async ()=>{
+    const btn = document.getElementById('pedido-form-submit');
+    if(btn.disabled) return;
     const form = document.getElementById('pedido-form');
     const selAtaId = form.ataId.value;
     if(!selAtaId){ toast('Selecione a Ata/Contrato de origem.', 'crit'); return; }
@@ -1901,8 +1931,16 @@ function openPedidoForm(ataId){
       toast(`${label} já usado no pedido de ${dup.pedido.ataNumero} (${fmtDate(dup.pedido.dataPedido)}).`, 'crit');
       return;
     }
-    await createPedido(ata, itensSelecionados, meta);
-    closePanel();
+    btn.disabled = true;
+    const textoOriginal = btn.textContent;
+    btn.textContent = 'Criando...';
+    try{
+      await createPedido(ata, itensSelecionados, meta);
+      closePanel();
+    }catch(e){
+      btn.disabled = false;
+      btn.textContent = textoOriginal;
+    }
   };
 }
 
@@ -2015,6 +2053,8 @@ async function openPedidoEditForm(pedido){
   wirePedidoDuplicadoCheck(document.getElementById('pedido-edit-empenho-input'), 'empenho', pedido.id);
 
   document.getElementById('pedido-edit-form-submit').onclick = async ()=>{
+    const btn = document.getElementById('pedido-edit-form-submit');
+    if(btn.disabled) return;
     const form = document.getElementById('pedido-edit-form');
     const qtdInputs = Array.from(document.querySelectorAll('.pedido-edit-qtd-input'));
     for(const inp of qtdInputs){
@@ -2064,8 +2104,12 @@ async function openPedidoEditForm(pedido){
       toast(`${label} já usado no pedido de ${dup.pedido.ataNumero} (${fmtDate(dup.pedido.dataPedido)}).`, 'crit');
       return;
     }
-    await updatePedido(pedido, novosItens, meta);
-    closePanel();
+    btn.disabled = true;
+    const textoOriginal = btn.textContent;
+    btn.textContent = 'Salvando...';
+    const ok = await updatePedido(pedido, novosItens, meta);
+    if(ok){ closePanel(); }
+    else{ btn.disabled = false; btn.textContent = textoOriginal; }
   };
 }
 
