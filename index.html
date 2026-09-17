@@ -2797,6 +2797,7 @@ async function openFaturarPedidoForm(pedido){
 
   document.getElementById('faturar-pedido-submit').onclick = async ()=>{
     if(!exigirPermissaoAcao('pedidos','faturar')) return;
+    if(!exigirPermissaoAcao('faturamento','criar')) return;
     const form = document.getElementById('faturar-pedido-form');
     if(!form.reportValidity()) return;
     const inputs = Array.from(document.querySelectorAll('.faturar-qtd-input'));
@@ -2833,6 +2834,8 @@ async function openFaturarPedidoForm(pedido){
       estadoAnteriorPedidoId: pedido.id, estadoAnteriorPedido: {status: pedido.status, itens: estadoAnteriorItens},
     };
     try{
+      const fatura = await createFatura(itensSelecionados, meta);
+      if(!fatura) return;
       for(const u of entregaUpdates){
         await state.db.doc('pedidos/'+pedido.id+'/itens/'+u.itemId).update({quantidadeEntregue: u.quantidadeEntregue});
       }
@@ -2840,7 +2843,6 @@ async function openFaturarPedidoForm(pedido){
       let somaQtd=0, somaEntregue=0;
       itensAtuais.docs.forEach(d=>{ const x=d.data(); const q=Number(x.quantidade)||0; somaQtd+=q; somaEntregue+=Math.min(Number(x.quantidadeEntregue)||0,q); });
       const novoStatus = somaEntregue<=0 ? pedido.status : (somaEntregue>=somaQtd ? 'Entregue' : 'Entregue Parcial');
-      await createFatura(itensSelecionados, meta);
       await finalizarStatusPedido(pedido, novoStatus, 'Status do pedido atualizado.');
       closePanel();
       if(state.saldoPendenteFaturamentoLoaded){ loadSaldoPendenteFaturamento(); }
@@ -4590,7 +4592,7 @@ function renderPedidoDetail(){
       <div class="actions no-print">
         ${podeAcao('pedidos','separar') && p.status!=='Cancelado' ? `<button class="btn btn-primary" onclick="openSepararPedidoForm(pedidoById('${p.id}'))">${ICONS.box}Separar Pedido</button>` : ''}
         ${podeAcao('pedidos','gerarPedidoCompra') ? `<button class="btn btn-primary" onclick="openPedidoCompraForm(pedidoById('${p.id}'))">${ICONS.inbox}Gerar Pedido de Compra</button>` : ''}
-        ${podeAcao('pedidos','faturar') && p.status!=='Cancelado' ? `<button class="btn btn-primary" onclick="openFaturarPedidoForm(pedidoById('${p.id}'))">${ICONS.sheet}Faturar</button>` : ''}
+        ${podeAcao('pedidos','faturar') && podeAcao('faturamento','criar') && p.status!=='Cancelado' ? `<button class="btn btn-primary" onclick="openFaturarPedidoForm(pedidoById('${p.id}'))">${ICONS.sheet}Faturar</button>` : ''}
         <button class="btn btn-ghost" onclick="imprimirPagina()">${ICONS.print}Imprimir</button>
         <button class="btn btn-ghost" onclick="abrirImpressao()">${ICONS.print}Baixar PDF</button>
         ${podeAcao('pedidos','editar')?`<button class="btn btn-ghost" onclick="openPedidoEditForm(pedidoById('${p.id}'))">${ICONS.edit}Editar</button>`:''}
