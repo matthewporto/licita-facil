@@ -1030,6 +1030,115 @@ async function lerPlanilhaComoLinhas(file){
   const delim = (primeiraLinha.match(/;/g)||[]).length >= (primeiraLinha.match(/,/g)||[]).length ? ';' : ',';
   return parseCSVTexto(semBom, delim);
 }
+const PEDIDO_ITEM_PLANILHA_HEADER = ['Item','Lote','Descrição','Marca','Unidade','Saldo Disponível','Valor Unitário','Valor de Custo','Quantidade a Pedir'];
+
+async function exportarItensPedidoCSV(ata, itensAta){
+  if(!ata || !itensAta || itensAta.length===0) return;
+  const downloadsApi = criarDownloadsLocal();
+  const itens = ordenarPorNumeroItem(itensAta);
+  const linhas = [PEDIDO_ITEM_PLANILHA_HEADER];
+  itens.forEach(it=>{
+    const saldo = (Number(it.quantidadeContratada)||0)-(Number(it.quantidadeConsumida)||0);
+    linhas.push([
+      it.numeroItem||'', it.lote||'', it.descricao||'', it.marca||'', it.unidade||'',
+      numeroParaCSV(saldo), numeroParaCSV(it.valorUnitario), numeroParaCSV(it.valorCusto), '',
+    ]);
+  });
+  const csv = '﻿' + linhas.map(row=>row.map(csvEscape).join(';')).join('\r\n');
+  const filename = 'pedido-'+(ata.numero||'ata').replace(/[\\/:*?"<>|]/g,'-')+'.csv';
+  try{
+    await downloadsApi.save({filename, data: csv});
+    toast('Planilha exportada. Preencha a coluna "Quantidade a Pedir" e depois use "Importar planilha".');
+  }catch(e){
+    const code = e && e.code;
+    if(code==='declined'){ /* usuário cancelou o download, nada a avisar */ }
+    else if(code==='too_large') toast('O arquivo ficou grande demais para baixar.', 'crit');
+    else if(code==='rate_limited') toast('Aguarde um instante e tente novamente.', 'crit');
+    else toast('Não foi possível exportar a planilha.', 'crit');
+  }
+}
+
+const CAMPOS_PLANILHA_PEDIDO_QTD = {
+  'item':'numeroItem', 'no item':'numeroItem', 'n item':'numeroItem', 'numero item':'numeroItem',
+  'quantidade a pedir':'quantidade', 'qtd a pedir':'quantidade', 'quantidade':'quantidade',
+  'marca':'marcaOverride', 'marca/fabricante':'marcaOverride',
+  'valor unitario':'valorUnitarioOverride', 'valor unit':'valorUnitarioOverride', 'valor unit.':'valorUnitarioOverride',
+  'valor de custo':'valorCustoOverride', 'valor custo':'valorCustoOverride', 'custo':'valorCustoOverride',
+};
+function mapearLinhasParaPedidoQtds(linhas){
+  const resultado = [], erros = [];
+  if(!linhas || linhas.length===0) return {resultado, erros};
+  const header = linhas[0].map(h=>normalizarHeaderPlanilha(h));
+  const colIndex = {};
+  header.forEach((h,i)=>{ const campo = CAMPOS_PLANILHA_PEDIDO_QTD[h]; if(campo && colIndex[campo]===undefined) colIndex[campo]=i; });
+  if(colIndex.numeroItem===undefined || colIndex.quantidade===undefined){
+    erros.push('Não encontrei as colunas "Item" e/ou "Quantidade a Pedir" na planilha.');
+    return {resultado, erros};
+  }
+  for(let i=1;i<linhas.length;i++){
+    const row = linhas[i]||[];
+    if(row.every(c=>c===''||c===undefined||c===null)) continue;
+    const get = (campo)=> colIndex[campo]!==undefined ? row[colIndex[campo]] : '';
+    const numeroItem = String(get('numeroItem')||'').trim();
+    const quantidade = parseNumeroBR(get('quantidade'));
+    if(!numeroItem || quantidade<=0) continue;
+    resultado.push({
+      numeroItem, quantidade,
+      marcaOverride: colIndex.marcaOverride!==undefined ? String(get('marcaOverride')||'').trim() : '',
+      valorUnitarioOverride: colIndex.valorUnitarioOverride!==undefined ? parseNumeroBR(get('valorUnitarioOverride')) : 0,
+      valorCustoOverride: colIndex.valorCustoOverride!==undefined ? parseNumeroBR(get('valorCustoOverride')) : 0,
+    });
+  }
+  return {resultado, erros};
+}
+
+function importarPlanilhaParaFormularioPedido(qtdInputsSelector){
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = '.csv,.xlsx,.xls';
+  input.style.display = 'none';
+  document.body.appendChild(input);
+  input.addEventListener('change', async ()=>{
+    const file = input.files[0];
+    document.body.removeChild(input);
+    if(!file) return;
+    try{
+      const linhas = await lerPlanilhaComoLinhas(file);
+      const { resultado, erros } = mapearLinhasParaPedidoQtds(linhas);
+      if(resultado.length===0){
+        toast(erros.length ? erros[0] : 'Nenhuma linha válida encontrada na planilha (confira "Item" e "Quantidade a Pedir").', 'crit');
+        return;
+      }
+      const usados = new Set();
+      let aplicados = 0, semSaldo = 0, naoEncontrados = 0;
+      resultado.forEach(r=>{
+        const inp = Array.from(document.querySelectorAll(qtdInputsSelector)).find(el=>el.dataset.numero===r.numeroItem && !usados.has(el));
+        if(!inp){ naoEncontrados++; return; }
+        usados.add(inp);
+        if(inp.disabled){ semSaldo++; return; }
+        const maxQtd = Number(inp.max);
+        inp.value = (!isNaN(maxQtd) && maxQtd>0 && r.quantidade>maxQtd) ? maxQtd : r.quantidade;
+        const tr = inp.closest('tr');
+        if(tr){
+          if(r.marcaOverride){ const m = tr.querySelector('.pedido-marca-input,.pedido-edit-marca-input'); if(m) m.value = r.marcaOverride; }
+          if(r.valorUnitarioOverride>0){ const v = tr.querySelector('.pedido-valorunit-input,.pedido-edit-valorunit-input'); if(v) v.value = r.valorUnitarioOverride; }
+          if(r.valorCustoOverride>0){ const c = tr.querySelector('.pedido-custo-input,.pedido-edit-custo-input'); if(c) c.value = r.valorCustoOverride; }
+        }
+        aplicados++;
+      });
+      let msg = `${aplicados} item(ns) preenchido(s) a partir da planilha.`;
+      if(semSaldo>0) msg += ` ${semSaldo} sem saldo disponível na Ata.`;
+      if(naoEncontrados>0) msg += ` ${naoEncontrados} não encontrado(s) nesta Ata.`;
+      toast(msg);
+    }catch(e){
+      console.error(e);
+      if(e && e.message==='planilha-lib-nao-carregada'){ toast('O leitor de planilha ainda está carregando. Tente novamente em instantes.', 'crit'); }
+      else toast('Não foi possível ler a planilha. Verifique o arquivo e tente novamente.', 'crit');
+    }
+  });
+  input.click();
+}
+
 function abrirImportarItensAta(ata){
   if(!ata) return;
   if(!exigirPermissaoAcao('atas','editar')) return;
@@ -1806,7 +1915,14 @@ function openPedidoForm(ataId){
           </div>
         </div>
         <div style="margin-top:6px">
-          <label style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);display:block;margin-bottom:8px">Itens do pedido</label>
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+            <label style="font-size:.7rem;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft)">Itens do pedido</label>
+            <div style="display:flex;gap:8px">
+              <button type="button" class="btn btn-ghost btn-sm" id="pedido-export-planilha-btn">${ICONS.sheet}Exportar planilha</button>
+              <button type="button" class="btn btn-ghost btn-sm" id="pedido-import-planilha-btn">${ICONS.sheet}Importar planilha</button>
+            </div>
+          </div>
+          <p style="font-size:.72rem;color:var(--ink-faint);margin:-4px 0 8px">Exporte os itens da Ata com o saldo disponível, preencha a coluna "Quantidade a Pedir" no Excel e importe de volta para preencher o pedido automaticamente.</p>
           <div id="pedido-itens-area">${prefilledAta ? '' : '<div class="empty" style="padding:24px"><p>Selecione uma Ata para ver os itens disponíveis.</p></div>'}</div>
         </div>
         <div class="field-grid">
@@ -1821,7 +1937,20 @@ function openPedidoForm(ataId){
       </div>
     </div>`);
 
+  let itensAtaAtual = [];
+  document.getElementById('pedido-export-planilha-btn').onclick = ()=>{
+    const ataAtualId = prefilledAta ? prefilledAta.id : (document.getElementById('pedido-ata-select')||{}).value;
+    const ataAtual = ataAtualId ? ataById(ataAtualId) : null;
+    if(!ataAtual || itensAtaAtual.length===0){ toast('Selecione uma Ata com itens primeiro.', 'crit'); return; }
+    exportarItensPedidoCSV(ataAtual, itensAtaAtual);
+  };
+  document.getElementById('pedido-import-planilha-btn').onclick = ()=>{
+    if(itensAtaAtual.length===0){ toast('Selecione uma Ata com itens primeiro.', 'crit'); return; }
+    importarPlanilhaParaFormularioPedido('.pedido-qtd-input');
+  };
+
   function renderItensArea(itens){
+    itensAtaAtual = itens || [];
     const area = document.getElementById('pedido-itens-area');
     if(!area) return;
     if(!itens || itens.length===0){ area.innerHTML = '<div class="empty" style="padding:24px"><p>Esta Ata não tem itens cadastrados.</p></div>'; return; }
