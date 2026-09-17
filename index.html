@@ -2647,7 +2647,7 @@ async function openSepararPedidoForm(pedido){
   const itens = ordenarPorNumeroItem(itensSnap.docs.map(d=>({id:d.id, ...d.data()})));
 
   openPanel(`
-    <div class="panel" style="width:min(680px,100%)">
+    <div class="panel" style="width:min(1100px,100%)">
       <div class="panel-header">
         <h2>Separar Pedido</h2>
         <button class="icon-btn" onclick="closePanel()">${ICONS.close}</button>
