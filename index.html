@@ -3343,69 +3343,78 @@ function openTransportadoraForm(existing){
   };
 }
 
+function cfTotalNFAtual(){ return window.__cfNotas.reduce((s,n)=>s+(Number(n.valor)||0),0); }
+function cfAtualizarDerivados(){
+  const totalNF = cfTotalNFAtual();
+  const totalEl = document.getElementById('cf-total-nf-display');
+  if(totalEl) totalEl.textContent = fmtBRL(totalNF);
+  window.__cfCotacoes.forEach((q,i)=>{
+    const pct = totalNF>0 ? ((Number(q.valor)||0)/totalNF*100) : 0;
+    const el = document.getElementById('cf-cot-pct-'+i);
+    if(el) el.textContent = pct.toFixed(2)+'%';
+  });
+}
 function cfRenderNotas(){
   const area = document.getElementById('cf-notas-area');
   if(!area) return;
-  const totalNF = window.__cfNotas.reduce((s,n)=>s+(Number(n.valor)||0),0);
   area.innerHTML = `<div class="table-wrap"><table>
     <thead><tr><th>Número da NF</th><th>Valor (R$)</th><th></th></tr></thead>
     <tbody>
       ${window.__cfNotas.map((n,i)=>`
         <tr>
-          <td><input data-row="${i}" data-field="numero" value="${esc(n.numero)}" placeholder="Nº NF"></td>
-          <td><input type="number" min="0" step="0.01" data-row="${i}" data-field="valor" value="${n.valor||''}" style="width:120px" placeholder="0,00"></td>
+          <td><input value="${esc(n.numero)}" placeholder="Nº NF" oninput="cfNotaFieldChange(${i},'numero',this.value)"></td>
+          <td><input type="number" min="0" step="0.01" value="${n.valor||''}" style="width:120px" placeholder="0,00" oninput="cfNotaFieldChange(${i},'valor',this.value)"></td>
           <td><button type="button" class="icon-btn" onclick="cfRemoveNota(${i})">${ICONS.trash}</button></td>
         </tr>`).join('')}
     </tbody>
   </table></div>
-  <p style="font-size:.8rem;color:var(--ink-soft);margin:6px 0 0">Total das NFs: <b>${fmtBRL(totalNF)}</b></p>`;
-  area.querySelectorAll('input[data-row]').forEach(inp=>{
-    inp.addEventListener('change', e=>{
-      const r = Number(e.target.dataset.row), f = e.target.dataset.field;
-      window.__cfNotas[r][f] = f==='valor' ? (Number(e.target.value)||0) : e.target.value;
-      cfRenderNotas(); cfRenderCotacoes();
-    });
-  });
+  <p style="font-size:.8rem;color:var(--ink-soft);margin:6px 0 0">Total das NFs: <b id="cf-total-nf-display">${fmtBRL(cfTotalNFAtual())}</b></p>`;
 }
+window.cfNotaFieldChange = function(i, field, value){
+  window.__cfNotas[i][field] = field==='valor' ? (Number(value)||0) : value;
+  if(field==='valor') cfAtualizarDerivados();
+};
 window.cfAddNota = function(){ window.__cfNotas.push({numero:'',valor:0}); cfRenderNotas(); };
-window.cfRemoveNota = function(i){ window.__cfNotas.splice(i,1); cfRenderNotas(); cfRenderCotacoes(); };
+window.cfRemoveNota = function(i){ window.__cfNotas.splice(i,1); cfRenderNotas(); cfAtualizarDerivados(); };
 
 function cfRenderCotacoes(){
   const area = document.getElementById('cf-cotacoes-area');
   if(!area) return;
-  const totalNF = window.__cfNotas.reduce((s,n)=>s+(Number(n.valor)||0),0);
+  const totalNF = cfTotalNFAtual();
   if(window.__cfCotacoes.length===0){
     area.innerHTML = '<div class="empty" style="padding:16px"><p>Nenhuma cotação adicionada.</p></div>';
-  } else {
-    area.innerHTML = `<div class="table-wrap"><table>
-      <thead><tr><th title="Escolhida">✓</th><th>Transportadora</th><th>Valor do frete (R$)</th><th>Nº cotação</th><th>Prazo</th><th>%</th><th></th></tr></thead>
-      <tbody>
-        ${window.__cfCotacoes.map((c,i)=>{
-          const pct = totalNF>0 ? ((Number(c.valor)||0)/totalNF*100) : 0;
-          return `<tr>
-            <td><input type="radio" name="cf-escolhida" ${window.__cfEscolhidaIndex===i?'checked':''} onchange="cfSetEscolhida(${i})"></td>
-            <td><select data-row="${i}" data-field="transportadoraId" style="min-width:170px">
-              <option value="">Selecione...</option>
-              ${state.transportadoras.map(t=>`<option value="${t.id}" ${c.transportadoraId===t.id?'selected':''}>${esc(t.nome)}</option>`).join('')}
-            </select></td>
-            <td><input type="number" min="0" step="0.01" data-row="${i}" data-field="valor" value="${c.valor||''}" style="width:110px" placeholder="0,00"></td>
-            <td><input data-row="${i}" data-field="numeroCotacao" value="${esc(c.numeroCotacao)}" style="width:100px"></td>
-            <td><input type="date" data-row="${i}" data-field="prazo" value="${esc(c.prazo)}" style="width:150px"></td>
-            <td class="num">${pct.toFixed(2)}%</td>
-            <td><button type="button" class="icon-btn" onclick="cfRemoveCotacao(${i})">${ICONS.trash}</button></td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table></div>`;
+    return;
   }
-  area.querySelectorAll('[data-row]').forEach(inp=>{
-    inp.addEventListener('change', e=>{
-      const r = Number(e.target.dataset.row), f = e.target.dataset.field;
-      window.__cfCotacoes[r][f] = f==='valor' ? (Number(e.target.value)||0) : e.target.value;
-      cfRenderCotacoes();
-    });
-  });
+  area.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th title="Escolhida">✓</th><th>Transportadora</th><th>Valor do frete (R$)</th><th>Nº cotação</th><th>Prazo</th><th>%</th><th></th></tr></thead>
+    <tbody>
+      ${window.__cfCotacoes.map((c,i)=>{
+        const pct = totalNF>0 ? ((Number(c.valor)||0)/totalNF*100) : 0;
+        return `<tr>
+          <td><input type="radio" name="cf-escolhida" ${window.__cfEscolhidaIndex===i?'checked':''} onchange="cfSetEscolhida(${i})"></td>
+          <td><select style="min-width:170px" onchange="cfCotacaoFieldChange(${i},'transportadoraId',this.value)">
+            <option value="">Selecione...</option>
+            ${state.transportadoras.map(t=>`<option value="${t.id}" ${c.transportadoraId===t.id?'selected':''}>${esc(t.nome)}</option>`).join('')}
+          </select></td>
+          <td><input type="number" min="0" step="0.01" value="${c.valor||''}" style="width:110px" placeholder="0,00" oninput="cfCotacaoFieldChange(${i},'valor',this.value)"></td>
+          <td><input value="${esc(c.numeroCotacao)}" style="width:100px" oninput="cfCotacaoFieldChange(${i},'numeroCotacao',this.value)"></td>
+          <td><input type="date" value="${esc(c.prazo)}" style="width:150px" oninput="cfCotacaoFieldChange(${i},'prazo',this.value)"></td>
+          <td class="num" id="cf-cot-pct-${i}">${pct.toFixed(2)}%</td>
+          <td><button type="button" class="icon-btn" onclick="cfRemoveCotacao(${i})">${ICONS.trash}</button></td>
+        </tr>`;
+      }).join('')}
+    </tbody>
+  </table></div>`;
 }
+window.cfCotacaoFieldChange = function(i, field, value){
+  window.__cfCotacoes[i][field] = field==='valor' ? (Number(value)||0) : value;
+  if(field==='valor'){
+    const totalNF = cfTotalNFAtual();
+    const pct = totalNF>0 ? ((Number(value)||0)/totalNF*100) : 0;
+    const el = document.getElementById('cf-cot-pct-'+i);
+    if(el) el.textContent = pct.toFixed(2)+'%';
+  }
+};
 window.cfAddCotacao = function(){ window.__cfCotacoes.push({transportadoraId:'',valor:0,numeroCotacao:'',prazo:''}); cfRenderCotacoes(); };
 window.cfRemoveCotacao = function(i){
   if(window.__cfEscolhidaIndex===i) window.__cfEscolhidaIndex = null;
