@@ -5492,6 +5492,18 @@ function montarPdfPedidoConteudo(doc, left, p, itens){
     ];
   });
   doc.autoTable({ startY:y, head:[colunas], body:linhas, styles:{fontSize:10,cellPadding:3,overflow:'linebreak'}, headStyles:{fillColor:[235,235,235],textColor:20,fontStyle:'bold'}, columnStyles:{2:{cellWidth:95}}, margin:{left,right:left}, theme:'grid' });
+
+  if(p.observacoes){
+    let oy = doc.lastAutoTable.finalY + 18;
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const obsLinhas = doc.splitTextToSize(String(p.observacoes), rightX-left);
+    if(oy + 12*(obsLinhas.length+1) > pageHeight-30){ doc.addPage(); oy = 40; }
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(20);
+    doc.text('Observações:', left, oy);
+    oy += 13;
+    doc.setFont('helvetica','normal'); doc.setTextColor(60);
+    obsLinhas.forEach(linha=>{ doc.text(linha, left, oy); oy += 12; });
+  }
 }
 
 function ataTotaisCalc(a, itens){
@@ -5853,7 +5865,8 @@ function montarImpressaoPedidoConteudo(p, itens){
   const miniTabela = '<table class="doc-mini"><thead><tr><th>DATA</th><th>NF</th><th>VALOR</th></tr></thead><tbody>'
     + Array.from({length:6}, ()=>'<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>').join('')
     + '</tbody></table>';
-  return header + '<div class="doc-pedido-top">' + htmlCamposImpressao(campos) + miniTabela + '</div>' + htmlTabelaImpressao(colunas, linhas, 'doc-table-pedido');
+  const obsHtml = p.observacoes ? '<div style="margin-top:10pt;font-size:9pt;color:#141414"><b>Observações:</b> '+esc(p.observacoes)+'</div>' : '';
+  return header + '<div class="doc-pedido-top">' + htmlCamposImpressao(campos) + miniTabela + '</div>' + htmlTabelaImpressao(colunas, linhas, 'doc-table-pedido') + obsHtml;
 }
 
 function montarImpressaoCotacaoFrete(){
