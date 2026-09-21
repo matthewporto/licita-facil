@@ -1375,13 +1375,29 @@ async function updatePedido(pedido, novosItens, meta){
     if(!wasCancelado){ await adjustItemConsumption(pedido.ataId, itensAntigos, -1); }
 
     const itensColecao = state.db.collection('pedidos/'+pedido.id+'/itens');
-    const opsDelete = itensSnap.docs.map(d=>({tipo:'delete', ref: state.db.doc('pedidos/'+pedido.id+'/itens/'+d.id)}));
+    // Preserva o ID do documento de cada item que continua existindo (por itemId), em vez de apagar
+    // e recriar tudo — faturas guardam origemPedidoItemId apontando pra esse ID, e trocá-lo a cada
+    // edição órfã o vínculo "já faturado", fazendo o item voltar a aparecer como pendente de faturar.
+    const existingDocIdByItemId = {};
+    const duplicateOldDocIds = [];
+    itensSnap.docs.forEach(d=>{
+      const key = d.data().itemId;
+      if(key===undefined || key===null || key==='') return;
+      if(existingDocIdByItemId[key]===undefined) existingDocIdByItemId[key] = d.id;
+      else duplicateOldDocIds.push(d.id);
+    });
+    const novosItemIds = new Set(novosItens.map(it=>it.itemId));
+    const opsDelete = itensSnap.docs
+      .filter(d=>duplicateOldDocIds.includes(d.id) || !novosItemIds.has(d.data().itemId))
+      .map(d=>({tipo:'delete', ref: state.db.doc('pedidos/'+pedido.id+'/itens/'+d.id)}));
     const opsAdd = novosItens.map(it=>{
       const qtd = Number(it.quantidade)||0;
       const quantidadeSeparada = Math.min(prevSeparadaByItemId[it.itemId]||0, qtd);
       const quantidadeEntregue = Math.min(prevEntregueByItemId[it.itemId]||0, qtd);
       const override = statusQuantityOverride(meta.status, qtd, quantidadeEntregue);
-      return { tipo:'set', ref: itensColecao.doc(), data: { ...it, quantidadeSeparada, quantidadeEntregue, ...(override||{}) } };
+      const existingDocId = existingDocIdByItemId[it.itemId];
+      const ref = existingDocId ? itensColecao.doc(existingDocId) : itensColecao.doc();
+      return { tipo:'set', ref, data: { ...it, quantidadeSeparada, quantidadeEntregue, ...(override||{}) } };
     });
     const todasOps = [...opsDelete, ...opsAdd];
     const chunkSize = 450;
