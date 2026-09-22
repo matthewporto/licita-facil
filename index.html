@@ -400,6 +400,7 @@ const state = {
   financeiroAno: new Date().getFullYear(), currentFinanceiroAno:null, currentFinanceiroMes:null,
   search:'', statusFilter:'todas', empresaFilter:'todas',
   pedidoSearch:'', pedidoStatusFilter:'todas', pedidoEmpresaFilter:'todas', pedidosSelecionados: new Set(),
+  pedidoItensIndex:null, pedidoItensIndexLoaded:false, pedidoItensIndexLoading:false,
   pedidoCompraSearch:'', pedidoCompraStatusFilter:'todas',
   faturaSearch:'', faturaStatusFilter:'todas',
   saldoPendenteCompra:[], saldoPendenteCompraLoaded:false, saldoPendenteCompraLoading:false,
@@ -634,6 +635,7 @@ function setView(view, opts){
   if(view==='fatura-detail') loadFaturaItens(state.currentFaturaId); else state.currentFaturaItens=[];
   if(view==='pedidoscompra' && state.db) loadSaldoPendenteCompras();
   if(view==='faturamento' && state.db) loadSaldoPendenteFaturamento();
+  if(view==='pedidos' && state.db) carregarPedidoItensIndex();
   render();
 }
 
@@ -1298,6 +1300,7 @@ async function createPedido(ata, itensSelecionados, meta){
   await adjustItemConsumption(ata.id, itensSelecionados, +1);
   await recomputeAtaCache(ata.id);
   await recomputePedidoCache(pedidoDoc.id, meta.status);
+  state.pedidoItensIndexLoaded = false;
   return pedidoDoc;
 }
 
@@ -1420,11 +1423,33 @@ async function updatePedido(pedido, novosItens, meta){
     await recomputeAtaCache(pedido.ataId);
     await recomputePedidoCache(pedido.id, meta.status);
     if(state.currentPedidoId===pedido.id){ await loadPedidoItens(pedido.id); }
+    state.pedidoItensIndexLoaded = false;
     return true;
   }catch(e){ console.error(e); return false; }
 }
 
 function pedidoCompraById(id){ return state.pedidosCompra.find(p=>p.id===id); }
+
+async function carregarPedidoItensIndex(){
+  if(state.pedidoItensIndexLoading || state.pedidoItensIndexLoaded) return;
+  state.pedidoItensIndexLoading = true;
+  render();
+  try{
+    const snaps = await Promise.all(state.pedidos.map(p=>state.db.collection('pedidos/'+p.id+'/itens').get()));
+    const index = [];
+    snaps.forEach((snap,i)=>{
+      const pedidoId = state.pedidos[i].id;
+      snap.docs.forEach(d=>{
+        const it = d.data();
+        index.push({ pedidoId, descricao: it.descricao||'', marca: it.marca||'' });
+      });
+    });
+    state.pedidoItensIndex = index;
+    state.pedidoItensIndexLoaded = true;
+  }catch(e){ console.error(e); }
+  state.pedidoItensIndexLoading = false;
+  render();
+}
 
 async function loadSaldoPendenteCompras(){
   state.saldoPendenteCompraLoading = true;
@@ -4935,7 +4960,10 @@ function pedidosFiltrados(){
   if(state.pedidoEmpresaFilter!=='todas') rows = rows.filter(p=>(ataById(p.ataId)||{}).empresaId===state.pedidoEmpresaFilter);
   if(state.pedidoSearch.trim()){
     const q = state.pedidoSearch.toLowerCase();
-    rows = rows.filter(p=> (p.orgao||'').toLowerCase().includes(q) || (p.ataNumero||'').toLowerCase().includes(q) || (p.observacoes||'').toLowerCase().includes(q) || (p.secretaria||'').toLowerCase().includes(q) || (p.empenho||'').toLowerCase().includes(q) || (p.ordemCompra||'').toLowerCase().includes(q) || (p.cidade||'').toLowerCase().includes(q) || ((ataById(p.ataId)||{}).empresaNome||'').toLowerCase().includes(q));
+    const pedidosComItemCorrespondente = state.pedidoItensIndex
+      ? new Set(state.pedidoItensIndex.filter(it=>it.descricao.toLowerCase().includes(q) || it.marca.toLowerCase().includes(q)).map(it=>it.pedidoId))
+      : new Set();
+    rows = rows.filter(p=> (p.orgao||'').toLowerCase().includes(q) || (p.ataNumero||'').toLowerCase().includes(q) || (p.observacoes||'').toLowerCase().includes(q) || (p.secretaria||'').toLowerCase().includes(q) || (p.empenho||'').toLowerCase().includes(q) || (p.ordemCompra||'').toLowerCase().includes(q) || (p.cidade||'').toLowerCase().includes(q) || ((ataById(p.ataId)||{}).empresaNome||'').toLowerCase().includes(q) || pedidosComItemCorrespondente.has(p.id));
   }
   return [...rows].sort((a,b)=>(b.dataPedido||'').localeCompare(a.dataPedido||''));
 }
@@ -4949,7 +4977,8 @@ function renderPedidosList(){
       <div class="actions">${podeAcao('pedidos','criar')?`<button class="btn btn-primary" onclick="openPedidoForm()">${ICONS.plus}Novo Pedido</button>`:''}</div>
     </div>
     <div class="toolbar">
-      <div class="search">${ICONS.search}<input id="pedidos-search-input" placeholder="Buscar por órgão, Ata, empresa ou observações..." value="${esc(state.pedidoSearch)}" oninput="state.pedidoSearch=this.value; render();"></div>
+      <div class="search">${ICONS.search}<input id="pedidos-search-input" placeholder="Buscar por órgão, Ata, empresa, item, marca ou observações..." value="${esc(state.pedidoSearch)}" oninput="state.pedidoSearch=this.value; render();"></div>
+      ${state.pedidoItensIndexLoading?`<span style="font-size:.76rem;color:var(--ink-faint);white-space:nowrap">Carregando itens para busca...</span>`:''}
       <select class="filter" onchange="state.pedidoEmpresaFilter=this.value; render();">
         <option value="todas" ${state.pedidoEmpresaFilter==='todas'?'selected':''}>Todas as empresas</option>
         ${state.empresas.map(e=>`<option value="${e.id}" ${state.pedidoEmpresaFilter===e.id?'selected':''}>${esc(e.nomeFantasia||e.razaoSocial)}</option>`).join('')}
