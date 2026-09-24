@@ -160,6 +160,8 @@ th{ text-align:left; font-size:.66rem; text-transform:uppercase; letter-spacing:
 td{ padding:12px 14px; border-bottom:1px solid var(--line-soft); vertical-align:middle; }
 tbody tr{ cursor:pointer; }
 tbody tr:hover td{ background:var(--surface-2); }
+tbody tr.row-em-compra td{ background:rgba(128,128,128,.24); color:var(--ink-soft); }
+tbody tr.row-em-compra:hover td{ background:rgba(128,128,128,.32); }
 tbody tr:last-child td{ border-bottom:none; }
 td.num{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; text-align:right; }
 td.numc{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; text-align:center; }
@@ -1455,7 +1457,21 @@ async function loadSaldoPendenteCompras(){
   state.saldoPendenteCompraLoading = true;
   render();
   const pedidosAbertos = state.pedidos.filter(p=>p.status==='Separado Parcial' || p.status==='Entregue Parcial');
-  const itensSnaps = await Promise.all(pedidosAbertos.map(p=>state.db.collection('pedidos/'+p.id+'/itens').get()));
+  const comprasAtivas = state.pedidosCompra.filter(pc=>pc.status!=='Cancelado');
+  const [itensSnaps, comprasItensSnaps] = await Promise.all([
+    Promise.all(pedidosAbertos.map(p=>state.db.collection('pedidos/'+p.id+'/itens').get())),
+    Promise.all(comprasAtivas.map(pc=>state.db.collection('pedidosCompra/'+pc.id+'/itens').get())),
+  ]);
+  const emCompraPorKey = {};
+  comprasItensSnaps.forEach(snap=>{
+    snap.docs.forEach(d=>{
+      const ci = d.data();
+      if(!ci.origemPedidoId || !ci.origemPedidoItemId) return;
+      const k = ci.origemPedidoId+'__'+ci.origemPedidoItemId;
+      const aReceber = Math.max(0, (Number(ci.quantidade)||0)-(Number(ci.quantidadeRecebida)||0));
+      emCompraPorKey[k] = (emCompraPorKey[k]||0) + aReceber;
+    });
+  });
   const linhas = [];
   pedidosAbertos.forEach((p,i)=>{
     itensSnaps[i].docs.forEach(d=>{
@@ -1473,6 +1489,7 @@ async function loadSaldoPendenteCompras(){
         empresaId: ata&&ata.empresaId||'', empresaNome: ata&&ata.empresaNome||'',
         descricao:it.descricao, marca:it.marca, unidade:it.unidade, numeroItem:it.numeroItem, lote:it.lote,
         saldo, qtd: prev ? Math.min(prev.qtd, saldo) : saldo, valorUnitario: it.valorUnitario||0,
+        emCompra: emCompraPorKey[key]||0,
         checked: prev ? prev.checked : false,
       });
     });
@@ -2697,7 +2714,8 @@ async function openPedidoCompraForm(pedidoOrigem){
     const keysIncluidas = new Set(linhasChecadas.map(l=>l.key));
     state.saldoPendenteCompra.forEach(l=>{ if(keysIncluidas.has(l.key)) l.checked = false; });
     closePanel();
-    if(state.view==='pedidoscompra'){ render(); }
+    if(state.saldoPendenteCompraLoaded){ loadSaldoPendenteCompras(); }
+    else if(state.view==='pedidoscompra'){ render(); }
   };
 }
 
@@ -5260,13 +5278,13 @@ function renderPedidosCompraList(){
         <thead><tr><th><input type="checkbox" title="Selecionar todos os itens da lista" ${linhas.every(l=>l.checked)?'checked':''} onchange="toggleSelectAllSaldoPendente(this.checked)"></th><th>Órgão</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Item</th><th>Marca</th><th>Un.</th><th>Saldo</th><th>Qtd. a comprar</th><th>Valor unit.</th></tr></thead>
         <tbody>
           ${linhas.map(l=>`
-            <tr>
+            <tr${l.emCompra>0?` class="row-em-compra" title="Já incluso em pedido de compra lançado (${l.emCompra} ${esc(l.unidade)||'un.'} a receber)"`:''}>
               <td><input type="checkbox" ${l.checked?'checked':''} onchange="toggleSaldoPendenteCompra('${l.key}', this.checked)"></td>
               <td class="truncate">${esc(l.orgao)}</td>
               <td>${esc(l.secretaria)||'—'}</td>
               <td class="mono">${esc(l.ordemCompra)||'—'}</td>
               <td class="mono">${esc(l.empenho)||'—'}</td>
-              <td class="wrap-desc">${esc(l.descricao)}</td>
+              <td class="wrap-desc">${esc(l.descricao)}${l.emCompra>0?` <span class="pill neutral" style="margin-left:4px">Em pedido de compra</span>`:''}</td>
               <td>${esc(l.marca)||'—'}</td>
               <td>${esc(l.unidade)||'—'}</td>
               <td class="num">${l.saldo}</td>
