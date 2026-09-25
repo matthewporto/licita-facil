@@ -1485,7 +1485,7 @@ async function loadSaldoPendenteCompras(){
       const ata = ataById(p.ataId);
       linhas.push({
         key, pedidoId:p.id, pedidoItemId:d.id, ataItemId:it.itemId,
-        orgao:p.orgao, secretaria:p.secretaria, empenho:p.empenho, ordemCompra:p.ordemCompra, ataNumero:p.ataNumero, dataPedido:p.dataPedido,
+        orgao:p.orgao, cidade:p.cidade, secretaria:p.secretaria, empenho:p.empenho, ordemCompra:p.ordemCompra, ataNumero:p.ataNumero, dataPedido:p.dataPedido,
         empresaId: ata&&ata.empresaId||'', empresaNome: ata&&ata.empresaNome||'',
         descricao:it.descricao, marca:it.marca, unidade:it.unidade, numeroItem:it.numeroItem, lote:it.lote,
         saldo, qtd: prev ? Math.min(prev.qtd, saldo) : saldo, valorUnitario: it.valorUnitario||0,
@@ -1518,7 +1518,7 @@ function filteredSaldoPendente(){
   else if(state.saldoPendenteSelecaoFilter==='naoselecionados') linhas = linhas.filter(l=>!l.checked);
   if(state.saldoPendenteSearch.trim()){
     const q = state.saldoPendenteSearch.toLowerCase();
-    linhas = linhas.filter(l=> (l.orgao||'').toLowerCase().includes(q) || (l.secretaria||'').toLowerCase().includes(q) || (l.empenho||'').toLowerCase().includes(q) || (l.descricao||'').toLowerCase().includes(q) || (l.marca||'').toLowerCase().includes(q));
+    linhas = linhas.filter(l=> (l.orgao||'').toLowerCase().includes(q) || (l.cidade||'').toLowerCase().includes(q) || (l.secretaria||'').toLowerCase().includes(q) || (l.empenho||'').toLowerCase().includes(q) || (l.descricao||'').toLowerCase().includes(q) || (l.marca||'').toLowerCase().includes(q));
   }
   return linhas;
 }
@@ -5275,12 +5275,13 @@ function renderPedidosCompraList(){
         state.saldoPendenteCompra.length===0 ? `<div class="empty"><h3>Nenhum saldo pendente</h3><p>Todos os Pedidos em aberto já estão totalmente separados e entregues.</p></div>` :
         linhas.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou os filtros.</p></div>` : `
       <div class="table-wrap"><table>
-        <thead><tr><th><input type="checkbox" title="Selecionar todos os itens da lista" ${linhas.every(l=>l.checked)?'checked':''} onchange="toggleSelectAllSaldoPendente(this.checked)"></th><th>Órgão</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Item</th><th>Marca</th><th>Un.</th><th>Saldo</th><th>Qtd. a comprar</th><th>Valor unit.</th></tr></thead>
+        <thead><tr><th><input type="checkbox" title="Selecionar todos os itens da lista" ${linhas.every(l=>l.checked)?'checked':''} onchange="toggleSelectAllSaldoPendente(this.checked)"></th><th>Órgão</th><th>Cidade</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Item</th><th>Marca</th><th>Un.</th><th>Saldo</th><th>Qtd. a comprar</th><th>Valor unit.</th></tr></thead>
         <tbody>
           ${linhas.map(l=>`
             <tr${l.emCompra>0?` class="row-em-compra" title="Já incluso em pedido de compra lançado (${l.emCompra} ${esc(l.unidade)||'un.'} a receber)"`:''}>
               <td><input type="checkbox" ${l.checked?'checked':''} onchange="toggleSaldoPendenteCompra('${l.key}', this.checked)"></td>
               <td class="truncate">${esc(l.orgao)}</td>
+              <td>${esc(l.cidade)||'—'}</td>
               <td>${esc(l.secretaria)||'—'}</td>
               <td class="mono">${esc(l.ordemCompra)||'—'}</td>
               <td class="mono">${esc(l.empenho)||'—'}</td>
@@ -5395,7 +5396,7 @@ function renderPedidoCompraDetail(){
         </p>
       </div>
       <div class="table-wrap" style="border-top:1px solid var(--line)"><table>
-        <thead><tr><th>Órgão</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Item</th><th>Lote</th><th>Descrição</th><th>Marca</th><th>Un.</th><th>Quantidade</th><th>Recebida</th><th>Saldo a receber</th><th>Valor unit.</th><th>Subtotal</th></tr></thead>
+        <thead><tr><th>Órgão</th><th>Cidade</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Item</th><th>Lote</th><th>Descrição</th><th>Marca</th><th>Un.</th><th>Quantidade</th><th>Recebida</th><th>Saldo a receber</th><th>Valor unit.</th><th>Subtotal</th></tr></thead>
         <tbody>
           ${itens.map(it=>{
             const qtd = Number(it.quantidade)||0;
@@ -5407,6 +5408,7 @@ function renderPedidoCompraDetail(){
             const origemP = it.origemPedidoId ? pedidoById(it.origemPedidoId) : null;
             return `<tr>
               <td class="truncate">${esc(origemP&&origemP.orgao)||'—'}</td>
+              <td>${esc(origemP&&origemP.cidade)||'—'}</td>
               <td>${esc(origemP&&origemP.secretaria)||'—'}</td>
               <td class="mono">${esc(origemP&&origemP.ordemCompra)||'—'}</td>
               <td class="mono">${esc(origemP&&origemP.empenho)||'—'}</td>
@@ -5695,7 +5697,7 @@ function montarPdfPedidoCompra(doc, left){
   });
   y += 6;
 
-  const colunas = ['Órgão','Secretaria','Ordem de compra','Empenho','Item','Lote','Descrição','Marca','Un.','Quantidade','Recebida','Saldo','Valor unit.','Subtotal'];
+  const colunas = ['Órgão','Cidade','Secretaria','Ordem de compra','Empenho','Item','Lote','Descrição','Marca','Un.','Quantidade','Recebida','Saldo','Valor unit.','Subtotal'];
   const linhas = itens.map(it=>{
     const qtd = Number(it.quantidade)||0;
     const rec = cancelado?0:Math.min(Number(it.quantidadeRecebida)||0, qtd);
@@ -5703,7 +5705,7 @@ function montarPdfPedidoCompra(doc, left){
     const unit = Number(it.valorUnitario)||0;
     const origemP = it.origemPedidoId ? pedidoById(it.origemPedidoId) : null;
     return [
-      (origemP&&origemP.orgao)||'—', (origemP&&origemP.secretaria)||'—', (origemP&&origemP.ordemCompra)||'—', (origemP&&origemP.empenho)||'—',
+      (origemP&&origemP.orgao)||'—', (origemP&&origemP.cidade)||'—', (origemP&&origemP.secretaria)||'—', (origemP&&origemP.ordemCompra)||'—', (origemP&&origemP.empenho)||'—',
       it.numeroItem||'—', it.lote||'—', it.descricao||'', it.marca||'—', it.unidade||'—',
       qtd, rec, saldoItem, pdfBRL(unit), pdfBRL(qtd*unit),
     ];
@@ -5981,7 +5983,7 @@ function montarImpressaoPedidoCompra(){
   const saldoReceber = cancelado?0:(valorTotalCalc-valorRecebidoCalc);
   const campos = [['Fornecedor', p.fornecedor], ['CNPJ do fornecedor', p.cnpjFornecedor], ['Ordem de compra', p.ordemCompra],
    ['Status', STATUS_PEDIDO_COMPRA_LABEL[p.status]||p.status], ['Valor total', pdfBRL(valorTotalCalc)], ['Saldo a receber', pdfBRL(saldoReceber)]];
-  const colunas = ['Órgão','Secretaria','Ordem de compra','Empenho','Item','Lote','Descrição','Marca','Un.','Quantidade','Recebida','Saldo','Valor unit.','Subtotal'];
+  const colunas = ['Órgão','Cidade','Secretaria','Ordem de compra','Empenho','Item','Lote','Descrição','Marca','Un.','Quantidade','Recebida','Saldo','Valor unit.','Subtotal'];
   const linhas = itens.map(it=>{
     const qtd = Number(it.quantidade)||0;
     const rec = cancelado?0:Math.min(Number(it.quantidadeRecebida)||0, qtd);
@@ -5989,7 +5991,7 @@ function montarImpressaoPedidoCompra(){
     const unit = Number(it.valorUnitario)||0;
     const origemP = it.origemPedidoId ? pedidoById(it.origemPedidoId) : null;
     return [
-      (origemP&&origemP.orgao)||'—', (origemP&&origemP.secretaria)||'—', (origemP&&origemP.ordemCompra)||'—', (origemP&&origemP.empenho)||'—',
+      (origemP&&origemP.orgao)||'—', (origemP&&origemP.cidade)||'—', (origemP&&origemP.secretaria)||'—', (origemP&&origemP.ordemCompra)||'—', (origemP&&origemP.empenho)||'—',
       it.numeroItem||'—', it.lote||'—', it.descricao||'', it.marca||'—', it.unidade||'—',
       qtd, rec, saldoItem, pdfBRL(unit), pdfBRL(qtd*unit),
     ];
@@ -6159,7 +6161,7 @@ async function copyPedidoCompraExcel(pedidoCompraId){
   const pc = pedidoCompraById(pedidoCompraId);
   if(!pc) return;
   const itens = state.currentPedidoCompraItens;
-  const header = ['Órgão','Secretaria','Ordem de compra','Empenho','Item','Lote','Descrição','Marca','Un.','Quantidade','Recebida','Saldo a receber','Valor unit.','Subtotal'];
+  const header = ['Órgão','Cidade','Secretaria','Ordem de compra','Empenho','Item','Lote','Descrição','Marca','Un.','Quantidade','Recebida','Saldo a receber','Valor unit.','Subtotal'];
   const cancelado = pc.status==='Cancelado';
   const lines = [header.join('\t')];
   itens.forEach(it=>{
@@ -6168,7 +6170,7 @@ async function copyPedidoCompraExcel(pedidoCompraId){
     const saldo = cancelado?0:(qtd-rec);
     const origemP = it.origemPedidoId ? pedidoById(it.origemPedidoId) : null;
     lines.push([
-      (origemP&&origemP.orgao)||'', (origemP&&origemP.secretaria)||'', (origemP&&origemP.ordemCompra)||'', (origemP&&origemP.empenho)||'',
+      (origemP&&origemP.orgao)||'', (origemP&&origemP.cidade)||'', (origemP&&origemP.secretaria)||'', (origemP&&origemP.ordemCompra)||'', (origemP&&origemP.empenho)||'',
       it.numeroItem||'', it.lote||'', it.descricao||'', it.marca||'', it.unidade||'',
       qtd, rec, saldo,
       (Number(it.valorUnitario)||0).toFixed(2).replace('.',','),
