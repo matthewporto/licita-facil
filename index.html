@@ -168,6 +168,10 @@ td.numc{ font-family:var(--font-mono); font-variant-numeric:tabular-nums; text-a
 th.thc{ text-align:center; }
 td.truncate, .truncate{ max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 td.wrap-desc, .wrap-desc{ min-width:200px; max-width:320px; white-space:normal; word-break:break-word; }
+#pedidocompra-form th{ padding:9px 8px; }
+#pedidocompra-form td{ padding:8px 8px; }
+#pedidocompra-form td.truncate{ max-width:none; min-width:130px; white-space:normal; word-break:break-word; overflow:visible; }
+#pedidocompra-form td.wrap-desc{ max-width:none; min-width:240px; }
 
 .pill{ display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:999px; font-size:.72rem; font-weight:600; white-space:nowrap; }
 .pill::before{ content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
@@ -2567,7 +2571,7 @@ async function openPedidoCompraForm(pedidoOrigem){
   window.__pedidoCompraManualRows = [];
 
   openPanel(`
-    <div class="panel" style="width:min(1280px,100%)">
+    <div class="panel" style="width:min(1800px,100%)">
       <div class="panel-header">
         <h2>Novo Pedido de Compra</h2>
         <button class="icon-btn" onclick="closePanel()">${ICONS.close}</button>
