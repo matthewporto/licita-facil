@@ -1541,7 +1541,7 @@ function filteredSaldoPendente(){
   else if(state.saldoPendenteSelecaoFilter==='naoselecionados') linhas = linhas.filter(l=>!l.checked);
   if(state.saldoPendenteSearch.trim()){
     const q = state.saldoPendenteSearch.toLowerCase();
-    linhas = linhas.filter(l=> (l.orgao||'').toLowerCase().includes(q) || (l.cidade||'').toLowerCase().includes(q) || (l.secretaria||'').toLowerCase().includes(q) || (l.empenho||'').toLowerCase().includes(q) || (l.descricao||'').toLowerCase().includes(q) || (l.marca||'').toLowerCase().includes(q));
+    linhas = linhas.filter(l=> (l.orgao||'').toLowerCase().includes(q) || (l.cidade||'').toLowerCase().includes(q) || (l.secretaria||'').toLowerCase().includes(q) || (l.empenho||'').toLowerCase().includes(q) || (l.descricao||'').toLowerCase().includes(q) || (l.marca||'').toLowerCase().includes(q) || (l.obs||'').toLowerCase().includes(q));
   }
   return linhas;
 }
@@ -5293,7 +5293,7 @@ function renderPedidosCompraList(){
     <p style="font-size:.82rem;color:var(--ink-soft);margin:-6px 0 12px">Gerado automaticamente a partir do que ainda falta separar em todos os Pedidos em aberto. Marque o que quer comprar.</p>
     ${state.saldoPendenteCompra.length>0 ? `
     <div class="toolbar">
-      <div class="search">${ICONS.search}<input id="saldo-pendente-search-input" placeholder="Buscar por órgão, secretaria, empenho, item ou marca..." value="${esc(state.saldoPendenteSearch)}" oninput="state.saldoPendenteSearch=this.value; render();"></div>
+      <div class="search">${ICONS.search}<input id="saldo-pendente-search-input" placeholder="Buscar por órgão, secretaria, empenho, item, marca ou observação..." value="${esc(state.saldoPendenteSearch)}" oninput="state.saldoPendenteSearch=this.value; render();"></div>
       <select class="filter" onchange="state.saldoPendenteEmpresaFilter=this.value; render();">
         <option value="todas" ${state.saldoPendenteEmpresaFilter==='todas'?'selected':''}>Todas as empresas</option>
         ${state.empresas.map(e=>`<option value="${e.id}" ${state.saldoPendenteEmpresaFilter===e.id?'selected':''}>${esc(e.nomeFantasia||e.razaoSocial)}</option>`).join('')}
