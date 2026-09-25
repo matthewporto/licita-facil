@@ -1477,6 +1477,7 @@ async function loadSaldoPendenteCompras(){
     });
   });
   const linhas = [];
+  const rascunhosObs = obsRascunhoLer();
   pedidosAbertos.forEach((p,i)=>{
     itensSnaps[i].docs.forEach(d=>{
       const it = d.data();
@@ -1494,7 +1495,7 @@ async function loadSaldoPendenteCompras(){
         descricao:it.descricao, marca:it.marca, unidade:it.unidade, numeroItem:it.numeroItem, lote:it.lote,
         saldo, qtd: prev ? Math.min(prev.qtd, saldo) : saldo, valorUnitario: it.valorUnitario||0,
         emCompra: emCompraPorKey[key]||0,
-        obs: prev ? (prev.obs||'') : '',
+        obs: prev ? (prev.obs||'') : (rascunhosObs[key]||''),
         checked: prev ? prev.checked : false,
       });
     });
@@ -1517,9 +1518,21 @@ function setSaldoPendenteCompraQty(key, val){
   // adiado para o foco já ter passado ao próximo campo (Tab) — render() devolve o foco pelo id do campo
   setTimeout(render, 0);
 }
+const OBS_RASCUNHO_KEY = 'licitafacil_obs_saldo_compra';
+function obsRascunhoLer(){
+  try{ return JSON.parse(localStorage.getItem(OBS_RASCUNHO_KEY)||'{}')||{}; }catch(e){ return {}; }
+}
+function obsRascunhoSalvar(key, val){
+  try{
+    const m = obsRascunhoLer();
+    if(val && String(val).trim()) m[key] = val; else delete m[key];
+    localStorage.setItem(OBS_RASCUNHO_KEY, JSON.stringify(m));
+  }catch(e){}
+}
 function setSaldoPendenteCompraObs(key, val){
   const l = state.saldoPendenteCompra.find(x=>x.key===key);
   if(l) l.obs = val;
+  obsRascunhoSalvar(key, val);
 }
 function filteredSaldoPendente(){
   let linhas = state.saldoPendenteCompra;
@@ -2665,7 +2678,7 @@ async function openPedidoCompraForm(pedidoOrigem){
     if(el) el.value = linhas[i].qtd;
     atualizarResumoAuto();
   };
-  window.pedidoCompraSetLinhaObs = function(i, val){ linhas[i].obs = val; };
+  window.pedidoCompraSetLinhaObs = function(i, val){ linhas[i].obs = val; setSaldoPendenteCompraObs(linhas[i].key, val); };
   renderAutoTable();
 
   function renderRows(){
@@ -2733,7 +2746,7 @@ async function openPedidoCompraForm(pedidoOrigem){
     };
     await createPedidoCompra(itensSelecionados, meta);
     const keysIncluidas = new Set(linhasChecadas.map(l=>l.key));
-    state.saldoPendenteCompra.forEach(l=>{ if(keysIncluidas.has(l.key)){ l.checked = false; l.obs = ''; } });
+    state.saldoPendenteCompra.forEach(l=>{ if(keysIncluidas.has(l.key)){ l.checked = false; l.obs = ''; obsRascunhoSalvar(l.key, ''); } });
     closePanel();
     if(state.saldoPendenteCompraLoaded){ loadSaldoPendenteCompras(); }
     else if(state.view==='pedidoscompra'){ render(); }
