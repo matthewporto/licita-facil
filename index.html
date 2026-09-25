@@ -2621,7 +2621,7 @@ async function openPedidoCompraForm(pedidoOrigem){
       area.innerHTML = '<div class="empty" style="padding:20px"><p>Nenhum saldo pendente encontrado nos Pedidos.</p></div>';
     } else {
       area.innerHTML = `<div class="table-wrap"><table>
-        <thead><tr><th></th><th>Órgão</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Item</th><th>Marca</th><th>Un.</th><th>Saldo</th><th>Qtd. a comprar</th><th>Valor unit.</th></tr></thead>
+        <thead><tr><th></th><th>Órgão</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Item</th><th>Marca</th><th>Un.</th><th>Saldo</th><th>Qtd. a comprar</th><th>Valor unit.</th><th>Observação (opcional)</th></tr></thead>
         <tbody>
           ${linhas.map((l,i)=>`
             <tr>
@@ -2634,18 +2634,28 @@ async function openPedidoCompraForm(pedidoOrigem){
               <td>${esc(l.marca)||'—'}</td>
               <td>${esc(l.unidade)||'—'}</td>
               <td class="num">${l.saldo}</td>
-              <td><input type="number" min="0" max="${l.saldo}" step="0.01" style="width:80px" value="${l.qtd}" onchange="pedidoCompraSetLinhaQty(${i}, this.value)"></td>
+              <td><input type="number" min="0" max="${l.saldo}" step="0.01" style="width:80px" value="${l.qtd}" onchange="pedidoCompraSetLinhaQty(${i}, this.value, this)"></td>
               <td class="num">${fmtBRL(l.valorUnitario)}</td>
+              <td><input value="${esc(l.obs)}" style="width:200px" placeholder="Opcional" oninput="pedidoCompraSetLinhaObs(${i}, this.value)"></td>
             </tr>`).join('')}
         </tbody>
       </table></div>`;
     }
+    atualizarResumoAuto();
+  }
+  function atualizarResumoAuto(){
     const marcadas = linhas.filter(l=>l.checked && Number(l.qtd)>0);
     const total = marcadas.reduce((s,l)=>s+l.qtd*(Number(l.valorUnitario)||0),0);
-    document.getElementById('pedidocompra-auto-summary').textContent = `${marcadas.length} item(ns) selecionado(s) — ${fmtBRL(total)}`;
+    const el = document.getElementById('pedidocompra-auto-summary');
+    if(el) el.textContent = `${marcadas.length} item(ns) selecionado(s) — ${fmtBRL(total)}`;
   }
   window.pedidoCompraToggleLinha = function(i, checked){ linhas[i].checked = checked; renderAutoTable(); };
-  window.pedidoCompraSetLinhaQty = function(i, val){ linhas[i].qtd = Math.max(0, Math.min(Number(val)||0, linhas[i].saldo)); renderAutoTable(); };
+  window.pedidoCompraSetLinhaQty = function(i, val, el){
+    linhas[i].qtd = Math.max(0, Math.min(Number(val)||0, linhas[i].saldo));
+    if(el) el.value = linhas[i].qtd;
+    atualizarResumoAuto();
+  };
+  window.pedidoCompraSetLinhaObs = function(i, val){ linhas[i].obs = val; };
   renderAutoTable();
 
   function renderRows(){
@@ -2656,7 +2666,7 @@ async function openPedidoCompraForm(pedidoOrigem){
       return;
     }
     area.innerHTML = `<div class="table-wrap"><table>
-      <thead><tr><th>Descrição</th><th>Marca</th><th>Un.</th><th>Quantidade</th><th>Valor unit. (R$)</th><th></th></tr></thead>
+      <thead><tr><th>Descrição</th><th>Marca</th><th>Un.</th><th>Quantidade</th><th>Valor unit. (R$)</th><th>Observação (opcional)</th><th></th></tr></thead>
       <tbody>
         ${window.__pedidoCompraManualRows.map((row,i)=>`
           <tr>
@@ -2665,6 +2675,7 @@ async function openPedidoCompraForm(pedidoOrigem){
             <td><input data-row="${i}" data-field="unidade" value="${esc(row.unidade)}" style="width:64px" placeholder="UN"></td>
             <td><input type="number" min="0" step="0.01" data-row="${i}" data-field="quantidade" value="${row.quantidade||''}" style="width:80px" placeholder="0"></td>
             <td><input type="number" min="0" step="0.01" data-row="${i}" data-field="valorUnitario" value="${row.valorUnitario||''}" style="width:90px" placeholder="0,00"></td>
+            <td><input data-row="${i}" data-field="observacoes" value="${esc(row.observacoes)}" style="width:200px" placeholder="Opcional"></td>
             <td><button type="button" class="icon-btn" onclick="pedidoCompraRemoveRow(${i})">${ICONS.trash}</button></td>
           </tr>`).join('')}
       </tbody>
@@ -2693,10 +2704,10 @@ async function openPedidoCompraForm(pedidoOrigem){
     const linhasChecadas = linhas.filter(l=>l.checked && Number(l.qtd)>0);
     const doAuto = linhasChecadas.map(l=>({
       descricao: l.descricao, unidade: l.unidade, marca: l.marca, numeroItem: l.numeroItem, lote: l.lote,
-      quantidade: l.qtd, valorUnitario: l.valorUnitario,
+      quantidade: l.qtd, valorUnitario: l.valorUnitario, observacoes: (l.obs||'').trim(),
       origemItemId: l.ataItemId, origemPedidoItemId: l.pedidoItemId, origemPedidoId: l.pedidoId,
     }));
-    const doManual = window.__pedidoCompraManualRows.filter(r=>r.descricao && Number(r.quantidade)>0);
+    const doManual = window.__pedidoCompraManualRows.filter(r=>r.descricao && Number(r.quantidade)>0).map(r=>({...r, observacoes:(r.observacoes||'').trim()}));
     const itensSelecionados = [...doAuto, ...doManual];
     if(itensSelecionados.length===0){ toast('Selecione ao menos um item pendente ou adicione um item avulso.', 'crit'); return; }
     const origemPedidoIds = [...new Set(doAuto.map(it=>it.origemPedidoId))];
@@ -5396,7 +5407,7 @@ function renderPedidoCompraDetail(){
         </p>
       </div>
       <div class="table-wrap" style="border-top:1px solid var(--line)"><table>
-        <thead><tr><th>Órgão</th><th>Cidade</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Item</th><th>Lote</th><th>Descrição</th><th>Marca</th><th>Un.</th><th>Quantidade</th><th>Recebida</th><th>Saldo a receber</th><th>Valor unit.</th><th>Subtotal</th></tr></thead>
+        <thead><tr><th>Órgão</th><th>Cidade</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Item</th><th>Lote</th><th>Descrição</th><th>Marca</th><th>Un.</th><th>Quantidade</th><th>Recebida</th><th>Saldo a receber</th><th>Valor unit.</th><th>Subtotal</th><th>Observação</th></tr></thead>
         <tbody>
           ${itens.map(it=>{
             const qtd = Number(it.quantidade)||0;
@@ -5422,6 +5433,7 @@ function renderPedidoCompraDetail(){
               <td class="num">${saldoItem}</td>
               <td class="num">${fmtBRL(it.valorUnitario)}</td>
               <td class="num">${fmtBRL(qtd*(Number(it.valorUnitario)||0))}</td>
+              <td class="wrap-desc">${esc(it.observacoes)||'—'}</td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -5697,7 +5709,7 @@ function montarPdfPedidoCompra(doc, left){
   });
   y += 6;
 
-  const colunas = ['Órgão','Cidade','Secretaria','Ordem de compra','Empenho','Item','Lote','Descrição','Marca','Un.','Quantidade','Recebida','Saldo','Valor unit.','Subtotal'];
+  const colunas = ['Órgão','Cidade','Secretaria','Ordem de compra','Empenho','Item','Lote','Descrição','Marca','Un.','Quantidade','Recebida','Saldo','Valor unit.','Subtotal','Observação'];
   const linhas = itens.map(it=>{
     const qtd = Number(it.quantidade)||0;
     const rec = cancelado?0:Math.min(Number(it.quantidadeRecebida)||0, qtd);
@@ -5707,7 +5719,7 @@ function montarPdfPedidoCompra(doc, left){
     return [
       (origemP&&origemP.orgao)||'—', (origemP&&origemP.cidade)||'—', (origemP&&origemP.secretaria)||'—', (origemP&&origemP.ordemCompra)||'—', (origemP&&origemP.empenho)||'—',
       it.numeroItem||'—', it.lote||'—', it.descricao||'', it.marca||'—', it.unidade||'—',
-      qtd, rec, saldoItem, pdfBRL(unit), pdfBRL(qtd*unit),
+      qtd, rec, saldoItem, pdfBRL(unit), pdfBRL(qtd*unit), it.observacoes||'—',
     ];
   });
   doc.autoTable({ startY:y, head:[colunas], body:linhas, styles:{fontSize:7,cellPadding:3,overflow:'linebreak'}, headStyles:{fillColor:[235,235,235],textColor:20,fontStyle:'bold'}, margin:{left,right:left}, theme:'grid' });
@@ -5983,7 +5995,7 @@ function montarImpressaoPedidoCompra(){
   const saldoReceber = cancelado?0:(valorTotalCalc-valorRecebidoCalc);
   const campos = [['Fornecedor', p.fornecedor], ['CNPJ do fornecedor', p.cnpjFornecedor], ['Ordem de compra', p.ordemCompra],
    ['Status', STATUS_PEDIDO_COMPRA_LABEL[p.status]||p.status], ['Valor total', pdfBRL(valorTotalCalc)], ['Saldo a receber', pdfBRL(saldoReceber)]];
-  const colunas = ['Órgão','Cidade','Secretaria','Ordem de compra','Empenho','Item','Lote','Descrição','Marca','Un.','Quantidade','Recebida','Saldo','Valor unit.','Subtotal'];
+  const colunas = ['Órgão','Cidade','Secretaria','Ordem de compra','Empenho','Item','Lote','Descrição','Marca','Un.','Quantidade','Recebida','Saldo','Valor unit.','Subtotal','Observação'];
   const linhas = itens.map(it=>{
     const qtd = Number(it.quantidade)||0;
     const rec = cancelado?0:Math.min(Number(it.quantidadeRecebida)||0, qtd);
@@ -5993,7 +6005,7 @@ function montarImpressaoPedidoCompra(){
     return [
       (origemP&&origemP.orgao)||'—', (origemP&&origemP.cidade)||'—', (origemP&&origemP.secretaria)||'—', (origemP&&origemP.ordemCompra)||'—', (origemP&&origemP.empenho)||'—',
       it.numeroItem||'—', it.lote||'—', it.descricao||'', it.marca||'—', it.unidade||'—',
-      qtd, rec, saldoItem, pdfBRL(unit), pdfBRL(qtd*unit),
+      qtd, rec, saldoItem, pdfBRL(unit), pdfBRL(qtd*unit), it.observacoes||'—',
     ];
   });
   const header = '<div class="doc-title">Pedido de Compra — '+esc(fmtDate(p.dataPedido))+'</div>';
@@ -6161,7 +6173,7 @@ async function copyPedidoCompraExcel(pedidoCompraId){
   const pc = pedidoCompraById(pedidoCompraId);
   if(!pc) return;
   const itens = state.currentPedidoCompraItens;
-  const header = ['Órgão','Cidade','Secretaria','Ordem de compra','Empenho','Item','Lote','Descrição','Marca','Un.','Quantidade','Recebida','Saldo a receber','Valor unit.','Subtotal'];
+  const header = ['Órgão','Cidade','Secretaria','Ordem de compra','Empenho','Item','Lote','Descrição','Marca','Un.','Quantidade','Recebida','Saldo a receber','Valor unit.','Subtotal','Observação'];
   const cancelado = pc.status==='Cancelado';
   const lines = [header.join('\t')];
   itens.forEach(it=>{
@@ -6175,6 +6187,7 @@ async function copyPedidoCompraExcel(pedidoCompraId){
       qtd, rec, saldo,
       (Number(it.valorUnitario)||0).toFixed(2).replace('.',','),
       (qtd*(Number(it.valorUnitario)||0)).toFixed(2).replace('.',','),
+      String(it.observacoes||'').replace(/[\t\r\n]+/g,' '),
     ].join('\t'));
   });
   const ok = await copyTextToClipboard(lines.join('\n'));
