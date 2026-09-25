@@ -5238,7 +5238,7 @@ function renderPedidosCompraList(){
     rows = rows.filter(p=>{
       const origemPedido = pedidoCompraOrigemPedido(p);
       return (p.fornecedor||'').toLowerCase().includes(q) || (p.origemPedidoInfo||'').toLowerCase().includes(q) || (p.observacoes||'').toLowerCase().includes(q) || (p.ordemCompra||'').toLowerCase().includes(q)
-        || (origemPedido&&origemPedido.orgao||'').toLowerCase().includes(q) || (origemPedido&&origemPedido.secretaria||'').toLowerCase().includes(q) || (origemPedido&&origemPedido.empenho||'').toLowerCase().includes(q)
+        || (origemPedido&&origemPedido.orgao||'').toLowerCase().includes(q) || (origemPedido&&origemPedido.cidade||'').toLowerCase().includes(q) || (origemPedido&&origemPedido.secretaria||'').toLowerCase().includes(q) || (origemPedido&&origemPedido.empenho||'').toLowerCase().includes(q)
         || (origemPedido&&origemPedido.ordemCompra||'').toLowerCase().includes(q);
     });
   }
@@ -5313,7 +5313,7 @@ function renderPedidosCompraList(){
       <div class="empty"><h3>Nenhum pedido de compra lançado ainda</h3><p>Marque itens no saldo pendente acima, ou lance um avulso.</p></div>
       ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou o filtro de status.</p></div>` : `
       <div class="table-wrap"><table>
-        <thead><tr><th>Data</th><th>Fornecedor</th><th>Órgão</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Valor</th><th>Saldo a receber</th><th>Status</th></tr></thead>
+        <thead><tr><th>Data</th><th>Fornecedor</th><th>Órgão</th><th>Cidade</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Valor</th><th>Saldo a receber</th><th>Status</th></tr></thead>
         <tbody>
           ${rows.map(p=>{
             const origemPedido = pedidoCompraOrigemPedido(p);
@@ -5322,6 +5322,7 @@ function renderPedidosCompraList(){
               <td>${fmtDate(p.dataPedido)}</td>
               <td>${esc(p.fornecedor)}</td>
               <td>${esc(origemPedido&&origemPedido.orgao)||'—'}</td>
+              <td>${esc(origemPedido&&origemPedido.cidade)||'—'}</td>
               <td>${esc(origemPedido&&origemPedido.secretaria)||'—'}</td>
               <td class="mono">${esc(origemPedido&&origemPedido.ordemCompra)||'—'}</td>
               <td class="mono">${esc(origemPedido&&origemPedido.empenho)||'—'}</td>
