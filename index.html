@@ -1494,6 +1494,7 @@ async function loadSaldoPendenteCompras(){
         descricao:it.descricao, marca:it.marca, unidade:it.unidade, numeroItem:it.numeroItem, lote:it.lote,
         saldo, qtd: prev ? Math.min(prev.qtd, saldo) : saldo, valorUnitario: it.valorUnitario||0,
         emCompra: emCompraPorKey[key]||0,
+        obs: prev ? (prev.obs||'') : '',
         checked: prev ? prev.checked : false,
       });
     });
@@ -1513,7 +1514,12 @@ function toggleSaldoPendenteCompra(key, checked){
 function setSaldoPendenteCompraQty(key, val){
   const l = state.saldoPendenteCompra.find(x=>x.key===key);
   if(l) l.qtd = Math.max(0, Math.min(Number(val)||0, l.saldo));
-  render();
+  // adiado para o foco já ter passado ao próximo campo (Tab) — render() devolve o foco pelo id do campo
+  setTimeout(render, 0);
+}
+function setSaldoPendenteCompraObs(key, val){
+  const l = state.saldoPendenteCompra.find(x=>x.key===key);
+  if(l) l.obs = val;
 }
 function filteredSaldoPendente(){
   let linhas = state.saldoPendenteCompra;
@@ -2727,7 +2733,7 @@ async function openPedidoCompraForm(pedidoOrigem){
     };
     await createPedidoCompra(itensSelecionados, meta);
     const keysIncluidas = new Set(linhasChecadas.map(l=>l.key));
-    state.saldoPendenteCompra.forEach(l=>{ if(keysIncluidas.has(l.key)) l.checked = false; });
+    state.saldoPendenteCompra.forEach(l=>{ if(keysIncluidas.has(l.key)){ l.checked = false; l.obs = ''; } });
     closePanel();
     if(state.saldoPendenteCompraLoaded){ loadSaldoPendenteCompras(); }
     else if(state.view==='pedidoscompra'){ render(); }
@@ -5290,7 +5296,7 @@ function renderPedidosCompraList(){
         state.saldoPendenteCompra.length===0 ? `<div class="empty"><h3>Nenhum saldo pendente</h3><p>Todos os Pedidos em aberto já estão totalmente separados e entregues.</p></div>` :
         linhas.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou os filtros.</p></div>` : `
       <div class="table-wrap"><table>
-        <thead><tr><th><input type="checkbox" title="Selecionar todos os itens da lista" ${linhas.every(l=>l.checked)?'checked':''} onchange="toggleSelectAllSaldoPendente(this.checked)"></th><th>Órgão</th><th>Cidade</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Item</th><th>Marca</th><th>Un.</th><th>Saldo</th><th>Qtd. a comprar</th><th>Valor unit.</th></tr></thead>
+        <thead><tr><th><input type="checkbox" title="Selecionar todos os itens da lista" ${linhas.every(l=>l.checked)?'checked':''} onchange="toggleSelectAllSaldoPendente(this.checked)"></th><th>Órgão</th><th>Cidade</th><th>Secretaria</th><th>Ordem de compra</th><th>Empenho</th><th>Item</th><th>Marca</th><th>Un.</th><th>Saldo</th><th>Qtd. a comprar</th><th>Valor unit.</th><th>Observação (opcional)</th></tr></thead>
         <tbody>
           ${linhas.map(l=>`
             <tr${l.emCompra>0?` class="row-em-compra" title="Já incluso em pedido de compra lançado (${l.emCompra} ${esc(l.unidade)||'un.'} a receber)"`:''}>
@@ -5304,8 +5310,9 @@ function renderPedidosCompraList(){
               <td>${esc(l.marca)||'—'}</td>
               <td>${esc(l.unidade)||'—'}</td>
               <td class="num">${l.saldo}</td>
-              <td><input type="number" min="0" max="${l.saldo}" step="0.01" style="width:80px" value="${l.qtd}" onchange="setSaldoPendenteCompraQty('${l.key}', this.value)"></td>
+              <td><input id="sp-qtd-${l.key}" type="number" min="0" max="${l.saldo}" step="0.01" style="width:80px" value="${l.qtd}" onchange="setSaldoPendenteCompraQty('${l.key}', this.value)"></td>
               <td class="num">${fmtBRL(l.valorUnitario)}</td>
+              <td><input id="sp-obs-${l.key}" value="${esc(l.obs)}" style="width:220px" placeholder="Opcional" oninput="setSaldoPendenteCompraObs('${l.key}', this.value)"></td>
             </tr>`).join('')}
         </tbody>
       </table></div>`}
