@@ -419,6 +419,83 @@ const state = {
 };
 
 function esc(s){ if(s===null||s===undefined) return ''; return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// Reconhece nomes de cor em português no texto de um item (ex.: "cor azul bebê") para destacar
+// na impressão/PDF. \b padrão do JS não funciona bem com acentos (ex. "bebê"), então usamos
+// lookaround manual com uma classe de letras latinas acentuadas.
+const CORES_TEXTO_LETRA = 'A-Za-zÀ-ÖØ-öø-ÿ';
+function corTextoRegex(padrao){
+  return new RegExp('(?<!['+CORES_TEXTO_LETRA+'])(?:'+padrao+')(?!['+CORES_TEXTO_LETRA+'])', 'gi');
+}
+// Frases mais específicas primeiro — o algoritmo de segmentação prioriza o casamento mais longo.
+const CORES_TEXTO_REGRAS = [
+  [corTextoRegex('azul\\s+royal'), '#1D4ED8'],
+  [corTextoRegex('azul\\s+marinho'), '#1E3A8A'],
+  [corTextoRegex('azul\\s+turquesa'), '#0E7490'],
+  [corTextoRegex('azuis?\\s+claros?'), '#3B82F6'],
+  [corTextoRegex('azuis?\\s+escuros?'), '#1E3A8A'],
+  [corTextoRegex('azul\\s+beb[eê]'), '#60A5FA'],
+  [corTextoRegex('azuis?'), '#1D4ED8'],
+  [corTextoRegex('verde\\s+bandeira'), '#15803D'],
+  [corTextoRegex('verde\\s+[aá]gua'), '#0D9488'],
+  [corTextoRegex('verde\\s+lim[aã]o'), '#65A30D'],
+  [corTextoRegex('verdes?\\s+claros?'), '#4ADE80'],
+  [corTextoRegex('verdes?\\s+escuros?'), '#166534'],
+  [corTextoRegex('verde\\s+beb[eê]'), '#86EFAC'],
+  [corTextoRegex('verdes?'), '#15803D'],
+  [corTextoRegex('vermelh[oa]s?'), '#DC2626'],
+  [corTextoRegex('amarelo\\s+ouro'), '#CA8A04'],
+  [corTextoRegex('amarel[oa]\\s+beb[eê]'), '#FDE047'],
+  [corTextoRegex('amarel[oa]s?'), '#CA8A04'],
+  [corTextoRegex('laranjas?'), '#EA580C'],
+  [corTextoRegex('rox[oa]s?'), '#7E22CE'],
+  [corTextoRegex('lil[aá]s'), '#9333EA'],
+  [corTextoRegex('rosa\\s+pink'), '#DB2777'],
+  [corTextoRegex('rosas?\\s+claros?'), '#F9A8D4'],
+  [corTextoRegex('rosas?\\s+escuros?'), '#BE185D'],
+  [corTextoRegex('rosa\\s+beb[eê]'), '#F472B6'],
+  [corTextoRegex('rosas?'), '#DB2777'],
+  [corTextoRegex('marrons?'), '#78350F'],
+  [corTextoRegex('dourad[oa]s?'), '#A16207'],
+  [corTextoRegex('cinzas?'), '#4B5563'],
+  [corTextoRegex('beges?'), '#92400E'],
+  [corTextoRegex('turquesas?'), '#0E7490'],
+];
+function segmentarCoresTexto(texto){
+  texto = texto||'';
+  if(!texto) return [{texto:'', cor:null}];
+  const candidatos = [];
+  CORES_TEXTO_REGRAS.forEach(([re, cor])=>{
+    re.lastIndex = 0;
+    let m;
+    while((m = re.exec(texto))){
+      candidatos.push({start:m.index, end:m.index+m[0].length, cor});
+      if(re.lastIndex===m.index) re.lastIndex++;
+    }
+  });
+  candidatos.sort((a,b)=> a.start-b.start || (b.end-b.start)-(a.end-a.start));
+  const escolhidos = [];
+  let cursor = 0;
+  candidatos.forEach(m=>{
+    if(m.start < cursor) return;
+    escolhidos.push(m);
+    cursor = m.end;
+  });
+  const segmentos = [];
+  let pos = 0;
+  escolhidos.forEach(m=>{
+    if(m.start>pos) segmentos.push({texto: texto.slice(pos,m.start), cor:null});
+    segmentos.push({texto: texto.slice(m.start,m.end), cor:m.cor});
+    pos = m.end;
+  });
+  if(pos<texto.length) segmentos.push({texto: texto.slice(pos), cor:null});
+  return segmentos;
+}
+function htmlComCores(texto){
+  return segmentarCoresTexto(texto).map(s=>
+    s.cor ? '<span style="color:'+s.cor+';font-weight:600">'+esc(s.texto)+'</span>' : esc(s.texto)
+  ).join('');
+}
 function ordenarPorNumeroItem(itens){ return [...itens].sort((x,y)=>(x.numeroItem||'').localeCompare(y.numeroItem||'', undefined, {numeric:true})); }
 function fmtBRL(n){ n=Number(n)||0; return n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
 function fmtDate(iso){ if(!iso) return '—'; const [y,m,d]=iso.split('-'); if(!y) return iso; return `${d}/${m}/${y}`; }
@@ -5494,6 +5571,35 @@ function montarPdfPedido(doc, left){
   return 'pedido-'+(p.dataPedido||'')+'.pdf';
 }
 
+// Repinta, por cima do texto já desenhado pela autoTable numa célula, as palavras que
+// casam com uma cor (ex.: "azul") na cor correspondente — sem mexer na quebra de linha
+// nem na altura da linha/célula que a autoTable já calculou.
+function desenharPalavrasColoridasPdf(doc, cell){
+  const linhas = cell.text || [];
+  if(!linhas.length) return;
+  const fontSize = cell.styles.fontSize;
+  const padLeft = typeof cell.padding==='function' ? cell.padding('left') : (cell.styles.cellPadding||3);
+  const padTop = typeof cell.padding==='function' ? cell.padding('top') : (cell.styles.cellPadding||3);
+  const lineHeightFactor = (cell.styles.lineHeightFactor)||1.15;
+  const lineHeight = fontSize * lineHeightFactor;
+  let ly = cell.y + padTop + fontSize*0.9;
+  linhas.forEach(linhaTexto=>{
+    const segs = segmentarCoresTexto(linhaTexto);
+    let lx = cell.x + padLeft;
+    segs.forEach(s=>{
+      if(!s.texto) return;
+      doc.setFont('helvetica', s.cor?'bold':'normal');
+      doc.setFontSize(fontSize);
+      doc.setTextColor(s.cor || '#141414');
+      doc.text(s.texto, lx, ly);
+      lx += doc.getTextWidth(s.texto);
+    });
+    ly += lineHeight;
+  });
+  doc.setFont('helvetica','normal');
+  doc.setTextColor(20);
+}
+
 function montarPdfPedidoConteudo(doc, left, p, itens){
   const cancelado = p.status==='Cancelado';
   let valorTotalCalc=0, valorSeparadoCalc=0, valorEntregueCalc=0, lucroTotalCalc=0, valorComCustoCalc=0;
@@ -5593,7 +5699,15 @@ function montarPdfPedidoConteudo(doc, left, p, itens){
       qtd, sep, ent, saldoItem, pdfBRL(unit), custo>0?pdfBRL(custo):'—', custo>0?pdfBRL(lucroUnit):'—', margem!==null?margem.toFixed(1)+'%':'—', pdfBRL(qtd*unit),
     ];
   });
-  doc.autoTable({ startY:y, head:[colunas], body:linhas, styles:{fontSize:10,cellPadding:3,overflow:'linebreak'}, headStyles:{fillColor:[235,235,235],textColor:20,fontStyle:'bold'}, columnStyles:{2:{cellWidth:95}}, margin:{left,right:left}, theme:'grid' });
+  doc.autoTable({ startY:y, head:[colunas], body:linhas, styles:{fontSize:10,cellPadding:3,overflow:'linebreak'}, headStyles:{fillColor:[235,235,235],textColor:20,fontStyle:'bold'}, columnStyles:{2:{cellWidth:95}}, margin:{left,right:left}, theme:'grid',
+    didDrawCell: function(data){
+      if(data.section!=='body' || data.column.index!==2) return;
+      const raw = String(data.cell.raw==null?'':data.cell.raw);
+      if(!segmentarCoresTexto(raw).some(s=>s.cor)) return;
+      desenharPalavrasColoridasPdf(doc, data.cell);
+    },
+  });
+  doc.setTextColor(20);
 
   if(p.observacoes){
     let oy = doc.lastAutoTable.finalY + 18;
@@ -5911,9 +6025,10 @@ function htmlCamposImpressao(campos){
     '<div><span class="label">'+esc(label)+':</span> <b>'+esc(value===undefined||value===null||value===''?'—':String(value))+'</b></div>'
   ).join('') + '</div>';
 }
-function htmlTabelaImpressao(colunas, linhas, cssClass){
+function htmlTabelaImpressao(colunas, linhas, cssClass, colunasHtml){
+  const rawCols = colunasHtml || [];
   return '<table'+(cssClass?' class="'+cssClass+'"':'')+'><thead><tr>'+colunas.map(c=>'<th>'+esc(c)+'</th>').join('')+'</tr></thead><tbody>'+
-    linhas.map(row=>'<tr>'+row.map(v=>'<td>'+esc(v)+'</td>').join('')+'</tr>').join('')+
+    linhas.map(row=>'<tr>'+row.map((v,i)=>'<td>'+(rawCols.includes(i)?v:esc(v))+'</td>').join('')+'</tr>').join('')+
     '</tbody></table>';
 }
 
@@ -5951,7 +6066,7 @@ function montarImpressaoPedidoConteudo(p, itens){
     const qtd = Number(it.quantidade)||0;
     const unit = Number(it.valorUnitario)||0;
     return [
-      it.numeroItem||'—', it.lote||'—', it.descricao||'', it.marca||'—', it.unidade||'—',
+      it.numeroItem||'—', it.lote||'—', htmlComCores(it.descricao||''), it.marca||'—', it.unidade||'—',
       qtd, pdfBRL(unit), pdfBRL(qtd*unit),
     ];
   });
@@ -5968,7 +6083,7 @@ function montarImpressaoPedidoConteudo(p, itens){
     + Array.from({length:6}, ()=>'<tr><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>').join('')
     + '</tbody></table>';
   const obsHtml = p.observacoes ? '<div style="margin-top:10pt;font-size:9pt;color:#141414"><b>Observações:</b> '+esc(p.observacoes)+'</div>' : '';
-  return header + '<div class="doc-pedido-top">' + htmlCamposImpressao(campos) + miniTabela + '</div>' + htmlTabelaImpressao(colunas, linhas, 'doc-table-pedido') + obsHtml;
+  return header + '<div class="doc-pedido-top">' + htmlCamposImpressao(campos) + miniTabela + '</div>' + htmlTabelaImpressao(colunas, linhas, 'doc-table-pedido', [2]) + obsHtml;
 }
 
 function montarImpressaoCotacaoFrete(){
