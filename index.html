@@ -460,6 +460,12 @@ const CORES_TEXTO_REGRAS = [
   [corTextoRegex('cinzas?'), '#4B5563'],
   [corTextoRegex('beges?'), '#92400E'],
   [corTextoRegex('turquesas?'), '#0E7490'],
+  // Preto e branco não têm como sair na cor real na impressão (branco fica invisível no
+  // papel), então só saem em negrito, sem trocar a cor do texto.
+  [corTextoRegex('pretos?'), 'negrito'],
+  [corTextoRegex('pretas?'), 'negrito'],
+  [corTextoRegex('brancos?'), 'negrito'],
+  [corTextoRegex('brancas?'), 'negrito'],
 ];
 function segmentarCoresTexto(texto){
   texto = texto||'';
@@ -492,9 +498,11 @@ function segmentarCoresTexto(texto){
   return segmentos;
 }
 function htmlComCores(texto){
-  return segmentarCoresTexto(texto).map(s=>
-    s.cor ? '<span style="color:'+s.cor+';font-weight:600">'+esc(s.texto)+'</span>' : esc(s.texto)
-  ).join('');
+  return segmentarCoresTexto(texto).map(s=>{
+    if(s.cor==='negrito') return '<span style="font-weight:700">'+esc(s.texto)+'</span>';
+    if(s.cor) return '<span style="color:'+s.cor+';font-weight:600">'+esc(s.texto)+'</span>';
+    return esc(s.texto);
+  }).join('');
 }
 function ordenarPorNumeroItem(itens){ return [...itens].sort((x,y)=>(x.numeroItem||'').localeCompare(y.numeroItem||'', undefined, {numeric:true})); }
 function fmtBRL(n){ n=Number(n)||0; return n.toLocaleString('pt-BR',{style:'currency',currency:'BRL'}); }
@@ -5590,7 +5598,7 @@ function desenharPalavrasColoridasPdf(doc, cell){
       if(!s.texto) return;
       doc.setFont('helvetica', s.cor?'bold':'normal');
       doc.setFontSize(fontSize);
-      doc.setTextColor(s.cor || '#141414');
+      doc.setTextColor(s.cor && s.cor!=='negrito' ? s.cor : '#141414');
       doc.text(s.texto, lx, ly);
       lx += doc.getTextWidth(s.texto);
     });
