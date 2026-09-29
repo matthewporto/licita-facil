@@ -432,10 +432,13 @@ const CORES_TEXTO_REGRAS = [
   [corTextoRegex('azul\\s+royal'), '#1D4ED8'],
   [corTextoRegex('azul\\s+marinho'), '#1E3A8A'],
   [corTextoRegex('azul\\s+turquesa'), '#0E7490'],
-  [corTextoRegex('azuis?\\s+claros?'), '#3B82F6'],
-  [corTextoRegex('azuis?\\s+escuros?'), '#1E3A8A'],
+  [corTextoRegex('(?:azul|azuis)\\s+claros?'), '#3B82F6'],
+  [corTextoRegex('(?:azul|azuis)\\s+escuros?'), '#1E3A8A'],
   [corTextoRegex('azul\\s+beb[eê]'), '#60A5FA'],
-  [corTextoRegex('azuis?'), '#1D4ED8'],
+  // "Azul" sozinho sai num azul claro/vivo — o tom escuro original ficava parecido demais
+  // com o preto do texto normal na impressão. Plural de "azul" é "azuis" (irregular, não
+  // "azuls"), por isso não dá pra usar o mesmo truque de "s?" no final dos outros nomes de cor.
+  [corTextoRegex('(?:azul|azuis)'), '#2E90FA'],
   [corTextoRegex('verde\\s+bandeira'), '#15803D'],
   [corTextoRegex('verde\\s+[aá]gua'), '#0D9488'],
   [corTextoRegex('verde\\s+lim[aã]o'), '#65A30D'],
@@ -455,7 +458,7 @@ const CORES_TEXTO_REGRAS = [
   [corTextoRegex('rosas?\\s+escuros?'), '#BE185D'],
   [corTextoRegex('rosa\\s+beb[eê]'), '#F472B6'],
   [corTextoRegex('rosas?'), '#DB2777'],
-  [corTextoRegex('marrons?'), '#78350F'],
+  [corTextoRegex('(?:marrom|marrons)'), '#78350F'],
   [corTextoRegex('dourad[oa]s?'), '#A16207'],
   [corTextoRegex('cinzas?'), '#4B5563'],
   [corTextoRegex('beges?'), '#92400E'],
@@ -466,6 +469,16 @@ const CORES_TEXTO_REGRAS = [
   [corTextoRegex('pretas?'), 'negrito'],
   [corTextoRegex('brancos?'), 'negrito'],
   [corTextoRegex('brancas?'), 'negrito'],
+  // "Cores diversas/variadas/sortidas", "colorido" etc. não indicam uma cor específica —
+  // também saem só em negrito, sem cor.
+  [corTextoRegex('colorid[oa]s?'), 'negrito'],
+  [corTextoRegex('multicor(es)?'), 'negrito'],
+  [corTextoRegex('cores?\\s+diversas?'), 'negrito'],
+  [corTextoRegex('diversas?\\s+cores?'), 'negrito'],
+  [corTextoRegex('cores?\\s+variadas?'), 'negrito'],
+  [corTextoRegex('cores?\\s+sortidas?'), 'negrito'],
+  [corTextoRegex('cores?\\s+mistas?'), 'negrito'],
+  [corTextoRegex('cores?\\s+diversificadas?'), 'negrito'],
 ];
 function segmentarCoresTexto(texto){
   texto = texto||'';
