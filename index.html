@@ -160,6 +160,13 @@ th{ text-align:left; font-size:.66rem; text-transform:uppercase; letter-spacing:
 td{ padding:12px 14px; border-bottom:1px solid var(--line-soft); vertical-align:middle; }
 tbody tr{ cursor:pointer; }
 tbody tr:hover td{ background:var(--surface-2); }
+th.sortable{ cursor:pointer; user-select:none; white-space:nowrap; }
+th.sortable:hover{ color:var(--ink); }
+.controle-tab td, .controle-tab th{ white-space:nowrap; }
+.controle-tab td, .controle-tab th{ padding-left:9px; padding-right:9px; }
+.controle-tab td{ padding-top:7px; padding-bottom:7px; font-size:.84rem; }
+.controle-tab td.sec{ max-width:170px; overflow:hidden; text-overflow:ellipsis; }
+.controle-pag{ display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 4px 2px; font-size:.82rem; color:var(--ink-soft); }
 tbody tr.row-em-compra td{ background:rgba(128,128,128,.24); color:var(--ink-soft); }
 tbody tr.row-em-compra:hover td{ background:rgba(128,128,128,.32); }
 tbody tr:last-child td{ border-bottom:none; }
@@ -357,9 +364,9 @@ const STATUS_FATURA = ["Emitida","Paga Parcial","Paga","Cancelada"];
 const STATUS_FATURA_LABEL = {"Emitida":"Emitida","Paga Parcial":"Paga Parcial","Paga":"Paga","Cancelada":"Cancelada"};
 const STATUS_FATURA_LEVEL = {"Emitida":"neutral","Paga Parcial":"warn","Paga":"ok","Cancelada":"crit"};
 
-const MODULOS_PERMISSAO = ["empresas","lembretes","atas","pedidos","pedidosCompra","faturamento","financeiro","lucro","orgaos","custosMinimos","transportadoras","cotacoesFrete","usuarios"];
+const MODULOS_PERMISSAO = ["empresas","lembretes","atas","pedidos","controlePedidos","pedidosCompra","faturamento","financeiro","lucro","orgaos","custosMinimos","transportadoras","cotacoesFrete","usuarios"];
 const MODULOS_PERMISSAO_LABEL = {
-  empresas:"Minhas Empresas", lembretes:"Lembretes", atas:"Atas e Contratos", pedidos:"Pedidos",
+  empresas:"Minhas Empresas", lembretes:"Lembretes", atas:"Atas e Contratos", pedidos:"Pedidos", controlePedidos:"Controle de Pedidos",
   pedidosCompra:"Pedidos de Compra", faturamento:"Faturamento", financeiro:"Financeiro", lucro:"Lucro",
   orgaos:"Órgãos Públicos", custosMinimos:"Custo/Mínimo", transportadoras:"Transportadoras", cotacoesFrete:"Cotação de Frete", usuarios:"Usuários",
 };
@@ -369,6 +376,7 @@ const MODULO_ACOES = {
   lembretes: ["criar","editar","excluir"],
   atas: ["criar","editar","excluir"],
   pedidos: ["criar","editar","excluir","separar","entregar","gerarPedidoCompra","faturar","cancelar"],
+  controlePedidos: ["criar","editar","excluir"],
   pedidosCompra: ["criar","editar","excluir","receber"],
   faturamento: ["criar","editar","excluir","pagar"],
   financeiro: ["criar","editar","excluir"],
@@ -388,7 +396,9 @@ const ACAO_LABEL = {
 const state = {
   db: null, dbReady:false, dbUnavailable:false,
   view:'painel',
-  atas:[], orgaos:[], pedidos:[], empresas:[], pedidosCompra:[], faturas:[], despesas:[], custosMinimos:[], usuarios:[], lembretes:[], financeiro:[], transportadoras:[], cotacoesFrete:[],
+  atas:[], orgaos:[], pedidos:[], empresas:[], pedidosCompra:[], faturas:[], despesas:[], custosMinimos:[], usuarios:[], lembretes:[], financeiro:[], transportadoras:[], cotacoesFrete:[], controlePedidos:[],
+  controleSearch:'', controleEmpresaFilter:'todas', controleMunicipioFilter:'todos', controleMesFilter:'todos', controleSituacaoFilter:'todas', controleOrigemFilter:'todas',
+  controleSort:{campo:'data', dir:'desc'}, controlePagina:0, controleNfMulti:null, controleNfMultiChave:'',
   currentCotacaoFreteId:null, cotacaoFreteSearch:'',
   custoMinimoSearch:'',
   orgaoSearch:'',
@@ -413,7 +423,7 @@ const state = {
   saldoPendenteSearch:'', saldoPendenteEmpresaFilter:'todas', saldoPendenteSelecaoFilter:'todos',
   saldoPendenteFaturamento:[], saldoPendenteFaturamentoLoaded:false, saldoPendenteFaturamentoLoading:false,
   saldoPendenteFaturamentoSearch:'', saldoPendenteFaturamentoEmpresaFilter:'todas', saldoPendenteFaturamentoSelecaoFilter:'todos',
-  unsubAtas:null, unsubOrgaos:null, unsubItens:null, unsubPedidos:null, unsubEmpresas:null, unsubPedidosCompra:null, unsubFaturas:null, unsubDespesas:null, unsubLocaisEntrega:null, unsubCustosMinimos:null, unsubUsuarios:null, unsubLembretes:null, unsubFinanceiro:null, unsubTransportadoras:null, unsubCotacoesFrete:null,
+  unsubAtas:null, unsubOrgaos:null, unsubItens:null, unsubPedidos:null, unsubEmpresas:null, unsubPedidosCompra:null, unsubFaturas:null, unsubDespesas:null, unsubLocaisEntrega:null, unsubCustosMinimos:null, unsubUsuarios:null, unsubLembretes:null, unsubFinanceiro:null, unsubTransportadoras:null, unsubCotacoesFrete:null, unsubControlePedidos:null,
   nome: localStorage.getItem('semfalta_nome') || '',
   autenticado: false,
 };
@@ -645,6 +655,7 @@ function iniciarModulosPosLogin(){
   subscribeFinanceiro();
   subscribeTransportadoras();
   subscribeCotacoesFrete();
+  subscribeControlePedidos();
 }
 async function tentarLogin(){
   const nome = document.getElementById('login-nome-input').value.trim();
@@ -684,8 +695,8 @@ async function criarPrimeiroAdmin(){
 }
 function fazerLogout(){
   localStorage.removeItem('semfalta_sessao');
-  [state.unsubAtas, state.unsubOrgaos, state.unsubPedidos, state.unsubEmpresas, state.unsubPedidosCompra, state.unsubFaturas, state.unsubDespesas, state.unsubCustosMinimos, state.unsubLembretes, state.unsubFinanceiro].forEach(u=>{ if(u) u(); });
-  state.atas=[]; state.orgaos=[]; state.pedidos=[]; state.empresas=[]; state.pedidosCompra=[]; state.faturas=[]; state.despesas=[]; state.custosMinimos=[]; state.lembretes=[]; state.financeiro=[];
+  [state.unsubAtas, state.unsubOrgaos, state.unsubPedidos, state.unsubEmpresas, state.unsubPedidosCompra, state.unsubFaturas, state.unsubDespesas, state.unsubCustosMinimos, state.unsubLembretes, state.unsubFinanceiro, state.unsubControlePedidos].forEach(u=>{ if(u) u(); });
+  state.atas=[]; state.orgaos=[]; state.pedidos=[]; state.empresas=[]; state.pedidosCompra=[]; state.faturas=[]; state.despesas=[]; state.custosMinimos=[]; state.lembretes=[]; state.financeiro=[]; state.controlePedidos=[];
   state.lembreteAlertaMostrado = false;
   state.autenticado = false;
   state.view = 'painel';
@@ -701,6 +712,7 @@ const VIEW_MODULO = {
   lembretes:'lembretes',
   atas:'atas', 'ata-detail':'atas',
   pedidos:'pedidos', 'pedido-detail':'pedidos',
+  controlepedidos:'controlePedidos',
   pedidoscompra:'pedidosCompra', 'pedidocompra-detail':'pedidosCompra',
   faturamento:'faturamento', 'fatura-detail':'faturamento',
   financeiro:'financeiro', 'financeiro-mes':'financeiro',
@@ -740,6 +752,7 @@ function setView(view, opts){
   if(view==='pedidoscompra' && state.db) loadSaldoPendenteCompras();
   if(view==='faturamento' && state.db) loadSaldoPendenteFaturamento();
   if(view==='pedidos' && state.db) carregarPedidoItensIndex();
+  if(view==='controlepedidos' && state.db) carregarControleNfMulti();
   render();
 }
 
@@ -832,6 +845,13 @@ function subscribeCotacoesFrete(){
     state.cotacoesFrete = snap.docs.map(d=>({id:d.id, ...d.data()}));
     render();
   }, err=>{ console.error(err); toast('Falha ao carregar cotações de frete.', 'crit'); });
+}
+function subscribeControlePedidos(){
+  if(state.unsubControlePedidos) state.unsubControlePedidos();
+  state.unsubControlePedidos = state.db.collection('controlePedidos').onSnapshot(snap=>{
+    state.controlePedidos = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    render();
+  }, err=>{ console.error(err); toast('Falha ao carregar o controle de pedidos.', 'crit'); });
 }
 function subscribePedidosCompra(){
   if(state.unsubPedidosCompra) state.unsubPedidosCompra();
@@ -4495,10 +4515,11 @@ function renderSidebar(){
         <div class="nav-label">Lembretes</div>
         ${item('lembretes','Lembretes',ICONS.bell, lembretesPendentesAtencao().length)}
       </div>` : ''}
-      ${(podeVerModulo('atas')||podeVerModulo('pedidos')||podeVerModulo('pedidosCompra')||podeVerModulo('faturamento')||podeVerModulo('financeiro')||podeVerModulo('lucro')||podeVerModulo('orgaos')||podeVerModulo('custosMinimos')) ? `<div class="nav-group">
+      ${(podeVerModulo('atas')||podeVerModulo('pedidos')||podeVerModulo('controlePedidos')||podeVerModulo('pedidosCompra')||podeVerModulo('faturamento')||podeVerModulo('financeiro')||podeVerModulo('lucro')||podeVerModulo('orgaos')||podeVerModulo('custosMinimos')) ? `<div class="nav-group">
         <div class="nav-label">Registro</div>
         ${podeVerModulo('atas')?item('atas','Atas e Contratos',ICONS.doc, state.atas.length):''}
         ${podeVerModulo('pedidos')?item('pedidos','Pedidos',ICONS.cart, state.pedidos.length):''}
+        ${podeVerModulo('controlePedidos')?item('controlepedidos','Controle de Pedidos',ICONS.check, controleContagem()):''}
         ${podeVerModulo('pedidosCompra')?item('pedidoscompra','Pedidos de Compra',ICONS.inbox, state.pedidosCompra.length):''}
         ${podeVerModulo('faturamento')?item('faturamento','Faturamento',ICONS.sheet, state.faturas.length):''}
         ${podeVerModulo('financeiro')?item('financeiro','Financeiro',ICONS.wallet, state.financeiro.length):''}
@@ -4962,6 +4983,455 @@ function renderTransportadoras(){
         </tbody>
       </table></div>`}
     </div>`;
+}
+
+// ===================== Controle de Pedidos =====================
+// Lista no formato da antiga planilha "LISTA DE PEDIDOS" (município, empresa, secretaria, OC, empenho, valor,
+// data, NF1-NF4, saldo). Mistura (1) linhas da planilha/manuais guardadas em `controlePedidos` com
+// (2) os pedidos lançados no módulo Pedidos, que entram sozinhos e têm as NFs vindas das Faturas.
+const CONTROLE_POR_PAGINA = 100;
+const CONTROLE_EMPRESAS_PADRAO = ['PORTO','PEGASUS','KAZY'];
+
+function ctrlNorm(s){ return String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\s+/g,' ').trim(); }
+function ctrlDocNorm(s){ return String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function ctrlArred(n){ return Math.round((Number(n)||0)*100)/100; }
+function ctrlMunicipioDe(p){
+  const c = String(p.cidade||'').replace(/\/[A-Za-z]{2}\s*$/,'').trim();
+  return (c || String(p.orgao||'').trim()).toUpperCase();
+}
+function ctrlEmpresaDe(p){
+  const a = ataById(p.ataId);
+  return a && a.empresaNome ? String(a.empresaNome).trim().split(/\s+/)[0].toUpperCase() : '';
+}
+function controleContagem(){
+  const ids = new Set(state.pedidos.map(p=>p.id));
+  return state.pedidos.filter(p=>p.status!=='Cancelado').length
+    + state.controlePedidos.filter(c=>c.origem!=='anotacao' && !(c.pedidoId && ids.has(c.pedidoId))).length;
+}
+
+// Faturas que misturam itens de mais de um pedido não dão para ratear só pelo total: busca os itens delas.
+async function carregarControleNfMulti(){
+  const multi = state.faturas.filter(f=>f.status!=='Cancelada' && Array.isArray(f.origemPedidoIds) && f.origemPedidoIds.length>1);
+  const chave = multi.map(f=>f.id).sort().join(',');
+  if(state.controleNfMultiChave===chave) return;
+  state.controleNfMultiChave = chave;
+  if(!multi.length){ state.controleNfMulti = null; return; }
+  try{
+    const snaps = await Promise.all(multi.map(f=>state.db.collection('faturas/'+f.id+'/itens').get()));
+    const mapa = new Map();
+    multi.forEach((f,i)=>{
+      const porPedido = {};
+      snaps[i].docs.forEach(d=>{
+        const it = d.data();
+        if(!it.origemPedidoId) return;
+        porPedido[it.origemPedidoId] = (porPedido[it.origemPedidoId]||0) + (Number(it.quantidade)||0)*(Number(it.valorUnitario)||0);
+      });
+      Object.keys(porPedido).forEach(pid=>{
+        if(!mapa.has(pid)) mapa.set(pid, []);
+        mapa.get(pid).push({numeroNota:f.numeroNota||'', data:f.dataEmissao||'', valor:porPedido[pid]});
+      });
+    });
+    state.controleNfMulti = mapa;
+    render();
+  }catch(e){ state.controleNfMultiChave = ''; }
+}
+
+function controleLinhas(){
+  const nfsPorPedido = new Map();
+  const addNf = (pid, nf)=>{ if(!nfsPorPedido.has(pid)) nfsPorPedido.set(pid, []); nfsPorPedido.get(pid).push(nf); };
+  state.faturas.forEach(f=>{
+    if(f.status==='Cancelada') return;
+    const ids = Array.isArray(f.origemPedidoIds) ? f.origemPedidoIds : (f.origemPedidoId ? [f.origemPedidoId] : []);
+    if(ids.length===1) addNf(ids[0], {numeroNota:f.numeroNota||'', data:f.dataEmissao||'', valor:Number(f.valorTotal)||0});
+  });
+  if(state.controleNfMulti) state.controleNfMulti.forEach((lista,pid)=>lista.forEach(nf=>addNf(pid, nf)));
+
+  const anotPorPedido = new Map();
+  state.controlePedidos.forEach(c=>{ if(c.pedidoId) anotPorPedido.set(c.pedidoId, c); });
+  const pedidosPorId = new Map(state.pedidos.map(p=>[p.id, p]));
+  const livres = new Map();
+  const linhas = [];
+
+  state.pedidos.forEach(p=>{
+    if(p.status==='Cancelado') return;
+    const anot = anotPorPedido.get(p.id) || null;
+    const nfList = (nfsPorPedido.get(p.id)||[]).slice().sort((a,b)=>(a.data||'').localeCompare(b.data||'') || String(a.numeroNota).localeCompare(String(b.numeroNota)));
+    const nfs = [null,null,null,null];
+    nfList.forEach((nf,i)=>{ const idx = Math.min(i,3); nfs[idx] = (nfs[idx]||0) + nf.valor; });
+    const l = {
+      key:'p'+p.id, tipo:'sistema', pedidoId:p.id, ctrl:anot,
+      municipio:ctrlMunicipioDe(p), empresa:ctrlEmpresaDe(p), secretaria:p.secretaria||'', ordemCompra:p.ordemCompra||'', empenho:p.empenho||'',
+      valor:Number(p.valorTotal)||0, data:p.dataPedido||'', nfs, nfInfo:nfList,
+      marcado:!!(anot && anot.marcado), observacoes:(anot && anot.observacoes)||'', ordem:0, candidatoPedidoId:null,
+    };
+    linhas.push(l);
+    if(!anot){
+      const k = ctrlNorm(l.municipio)+'|'+ctrlArred(l.valor).toFixed(2);
+      if(!livres.has(k)) livres.set(k, []);
+      livres.get(k).push(p);
+    }
+  });
+
+  state.controlePedidos.forEach(c=>{
+    if(c.origem==='anotacao') return;
+    if(c.pedidoId && pedidosPorId.has(c.pedidoId)) return;
+    const nfs = [0,1,2,3].map(i=>{ const n = (c.nfs||[])[i]; return Number(n)||null; });
+    const l = {
+      key:'c'+c.id, tipo:'planilha', pedidoId:null, ctrl:c,
+      municipio:c.municipio||'', empresa:c.empresa||'', secretaria:c.secretaria||'', ordemCompra:c.ordemCompra||'', empenho:c.empenho||'',
+      valor:Number(c.valor)||0, data:c.data||'', nfs, nfInfo:[],
+      marcado:!!c.marcado, observacoes:c.observacoes||'', ordem:c.ordemPlanilha||0, candidatoPedidoId:null,
+    };
+    const cands = livres.get(ctrlNorm(l.municipio)+'|'+ctrlArred(l.valor).toFixed(2)) || [];
+    const m = cands.find(p=>
+      (ctrlDocNorm(l.empenho) && ctrlDocNorm(p.empenho)===ctrlDocNorm(l.empenho)) ||
+      (ctrlDocNorm(l.ordemCompra) && ctrlDocNorm(p.ordemCompra)===ctrlDocNorm(l.ordemCompra)) ||
+      (l.data && p.dataPedido===l.data));
+    if(m) l.candidatoPedidoId = m.id;
+    linhas.push(l);
+  });
+
+  linhas.forEach(l=>{
+    l.munKey = ctrlNorm(l.municipio);
+    l.totalNf = ctrlArred(l.nfs.reduce((s,n)=>s+(Number(n)||0),0));
+    l.saldo = ctrlArred(l.valor - l.totalNf);
+    l.mesChave = (l.data||'').slice(0,7);
+    l.busca = ctrlNorm([l.municipio,l.empresa,l.secretaria,l.ordemCompra,l.empenho,l.observacoes,l.valor.toFixed(2),...l.nfInfo.map(n=>n.numeroNota)].join(' '));
+  });
+  return linhas;
+}
+
+function controleFiltradas(todas){
+  let rows = todas;
+  if(state.controleEmpresaFilter!=='todas') rows = rows.filter(l=>l.empresa===state.controleEmpresaFilter);
+  if(state.controleMunicipioFilter!=='todos') rows = rows.filter(l=>l.munKey===state.controleMunicipioFilter);
+  if(state.controleMesFilter!=='todos') rows = rows.filter(l=>(l.mesChave||'sem')===state.controleMesFilter);
+  if(state.controleOrigemFilter!=='todas') rows = rows.filter(l=>l.tipo===state.controleOrigemFilter);
+  const sit = state.controleSituacaoFilter;
+  if(sit==='saldo') rows = rows.filter(l=>l.saldo>0);
+  else if(sit==='quitado') rows = rows.filter(l=>l.saldo===0 && l.totalNf>0);
+  else if(sit==='semnf') rows = rows.filter(l=>l.totalNf===0);
+  else if(sit==='negativo') rows = rows.filter(l=>l.saldo<0);
+  else if(sit==='marcado') rows = rows.filter(l=>l.marcado);
+  if(state.controleSearch.trim()){
+    const q = ctrlNorm(state.controleSearch);
+    rows = rows.filter(l=>l.busca.includes(q));
+  }
+  const {campo, dir} = state.controleSort;
+  const sinal = dir==='asc' ? 1 : -1;
+  const chave = l=> campo==='valor' ? l.valor : campo==='saldo' ? l.saldo : campo==='data' ? (l.data||'') : campo==='municipio' ? l.munKey : String(l[campo]||'').toUpperCase();
+  return [...rows].sort((a,b)=>{
+    const x = chave(a), y = chave(b);
+    const c = typeof x==='number' ? x-y : (x<y ? -1 : x>y ? 1 : 0);
+    if(c!==0) return c*sinal;
+    return (a.munKey<b.munKey ? -1 : a.munKey>b.munKey ? 1 : 0) || ((a.ordem||0)-(b.ordem||0));
+  });
+}
+
+function controleOrdenar(campo){
+  const s = state.controleSort;
+  state.controleSort = s.campo===campo
+    ? {campo, dir: s.dir==='asc' ? 'desc' : 'asc'}
+    : {campo, dir: (campo==='valor'||campo==='saldo'||campo==='data') ? 'desc' : 'asc'};
+  state.controlePagina = 0;
+  render();
+}
+function controleSetFiltro(chave, valor){ state[chave] = valor; state.controlePagina = 0; render(); }
+function controleMudarPagina(delta){ state.controlePagina = Math.max(0, state.controlePagina+delta); render(); }
+
+async function createControlePedido(data){
+  if(!exigirPermissaoAcao('controlePedidos','criar')) return null;
+  return await dbCall(state.db.collection('controlePedidos').add({
+    ...data, criadoPor: state.nome||'—', criadoEm: new Date().toISOString(),
+  }), 'Linha adicionada ao controle de pedidos.');
+}
+async function updateControlePedido(id, data){
+  if(!exigirPermissaoAcao('controlePedidos','editar')) return;
+  await dbCall(state.db.doc('controlePedidos/'+id).update({
+    ...data, atualizadoPor: state.nome||'—', atualizadoEm: new Date().toISOString(),
+  }), 'Controle de pedidos atualizado.');
+}
+async function deleteControlePedido(id){
+  if(!exigirPermissaoAcao('controlePedidos','excluir')) return false;
+  const ok = await confirmDialog('Excluir esta linha do controle de pedidos?');
+  if(!ok) return false;
+  await dbCall(state.db.doc('controlePedidos/'+id).delete(), 'Linha excluída.');
+  return true;
+}
+async function controleVincular(ctrlId, pedidoId){
+  if(!exigirPermissaoAcao('controlePedidos','editar')) return;
+  const ok = await confirmDialog('Vincular esta linha da planilha ao pedido já lançado no sistema? A linha deixa de aparecer separada e passa a usar os dados do pedido.');
+  if(!ok) return;
+  await updateControlePedido(ctrlId, {pedidoId});
+}
+async function controleSalvarAnotacao(pedidoId, ctrl, patch){
+  if(ctrl){ await updateControlePedido(ctrl.id, patch); return; }
+  if(!patch.marcado && !patch.observacoes) return;
+  await createControlePedido({pedidoId, origem:'anotacao', nfs:[null,null,null,null], ...patch});
+}
+
+function controleThSort(campo, label, classe){
+  const s = state.controleSort;
+  const seta = s.campo===campo ? (s.dir==='asc' ? ' ▲' : ' ▼') : '';
+  return `<th class="sortable ${classe||''}" onclick="controleOrdenar('${campo}')">${label}${seta}</th>`;
+}
+
+function renderControlePedidos(){
+  const todas = controleLinhas();
+  const rows = controleFiltradas(todas);
+  const totalPaginas = Math.max(1, Math.ceil(rows.length/CONTROLE_POR_PAGINA));
+  if(state.controlePagina>=totalPaginas) state.controlePagina = totalPaginas-1;
+  const ini = state.controlePagina*CONTROLE_POR_PAGINA;
+  const pagina = rows.slice(ini, ini+CONTROLE_POR_PAGINA);
+  const somaValor = ctrlArred(rows.reduce((s,l)=>s+l.valor,0));
+  const somaNf = ctrlArred(rows.reduce((s,l)=>s+l.totalNf,0));
+  const somaSaldo = ctrlArred(rows.reduce((s,l)=>s+l.saldo,0));
+  const empresas = [...new Set([...CONTROLE_EMPRESAS_PADRAO, ...todas.map(l=>l.empresa).filter(Boolean)])].sort();
+  const municipios = new Map();
+  todas.forEach(l=>{ if(l.munKey && !municipios.has(l.munKey)) municipios.set(l.munKey, l.municipio); });
+  const municipiosOrd = [...municipios.entries()].sort((a,b)=>a[0].localeCompare(b[0],'pt-BR'));
+  const meses = [...new Set(todas.map(l=>l.mesChave||'sem'))].sort().reverse();
+  const podeEditar = podeAcao('controlePedidos','editar');
+  const podeExcluir = podeAcao('controlePedidos','excluir');
+  const podeCriar = podeAcao('controlePedidos','criar');
+  const sel = (atual, v)=> atual===v ? 'selected' : '';
+
+  return `
+    <div class="topbar">
+      <div><h1>Controle de Pedidos</h1><div class="sub">${todas.length} pedido(s) · pedidos lançados no sistema entram automaticamente</div></div>
+      <div class="actions">
+        <button class="btn btn-ghost" onclick="copyControlePedidosExcel()">${ICONS.sheet}Copiar para Excel</button>
+        <button class="btn btn-ghost" onclick="exportarControlePedidosXLSX()">${ICONS.sheet}Baixar planilha</button>
+        ${podeCriar?`<button class="btn btn-primary" onclick="openControlePedidoForm()">${ICONS.plus}Nova linha</button>`:''}
+      </div>
+    </div>
+    <div class="kpi-row" style="margin-bottom:16px">
+      <div class="kpi"><div class="label">Pedidos na lista</div><div class="value">${rows.length}</div></div>
+      <div class="kpi"><div class="label">Valor total</div><div class="value">${fmtBRL(somaValor)}</div></div>
+      <div class="kpi"><div class="label">Faturado (NFs)</div><div class="value ok">${fmtBRL(somaNf)}</div></div>
+      <div class="kpi"><div class="label">Saldo a faturar</div><div class="value ${somaSaldo>0?'warn':''}">${fmtBRL(somaSaldo)}</div></div>
+    </div>
+    <div class="toolbar">
+      <div class="search">${ICONS.search}<input id="controle-search-input" placeholder="Buscar por município, secretaria, ordem de compra, empenho, NF ou observações..." value="${esc(state.controleSearch)}" oninput="controleSetFiltro('controleSearch', this.value)"></div>
+      <select class="filter" onchange="controleSetFiltro('controleMunicipioFilter', this.value)">
+        <option value="todos">Todos os municípios</option>
+        ${municipiosOrd.map(([k,label])=>`<option value="${esc(k)}" ${sel(state.controleMunicipioFilter,k)}>${esc(label)}</option>`).join('')}
+      </select>
+      <select class="filter" onchange="controleSetFiltro('controleEmpresaFilter', this.value)">
+        <option value="todas">Todas as empresas</option>
+        ${empresas.map(e=>`<option value="${esc(e)}" ${sel(state.controleEmpresaFilter,e)}>${esc(e)}</option>`).join('')}
+      </select>
+      <select class="filter" onchange="controleSetFiltro('controleMesFilter', this.value)">
+        <option value="todos">Todos os meses</option>
+        ${meses.map(m=>`<option value="${m}" ${sel(state.controleMesFilter,m)}>${m==='sem'?'Sem data':m.slice(5)+'/'+m.slice(0,4)}</option>`).join('')}
+      </select>
+      <select class="filter" onchange="controleSetFiltro('controleSituacaoFilter', this.value)">
+        <option value="todas">Todas as situações</option>
+        <option value="saldo" ${sel(state.controleSituacaoFilter,'saldo')}>Com saldo a faturar</option>
+        <option value="quitado" ${sel(state.controleSituacaoFilter,'quitado')}>Totalmente faturado</option>
+        <option value="semnf" ${sel(state.controleSituacaoFilter,'semnf')}>Sem nenhuma NF</option>
+        <option value="negativo" ${sel(state.controleSituacaoFilter,'negativo')}>Saldo negativo</option>
+        <option value="marcado" ${sel(state.controleSituacaoFilter,'marcado')}>Marcados com x</option>
+      </select>
+      <select class="filter" onchange="controleSetFiltro('controleOrigemFilter', this.value)">
+        <option value="todas">Todas as origens</option>
+        <option value="sistema" ${sel(state.controleOrigemFilter,'sistema')}>Lançados no sistema</option>
+        <option value="planilha" ${sel(state.controleOrigemFilter,'planilha')}>Da planilha / manuais</option>
+      </select>
+    </div>
+    <div class="card">
+      ${todas.length===0 ? `
+      <div class="empty"><h3>Nenhum pedido no controle ainda</h3><p>Os pedidos lançados no módulo Pedidos aparecem aqui automaticamente.</p>
+        ${podeCriar?`<button class="btn btn-primary" onclick="openControlePedidoForm()">${ICONS.plus}Nova linha</button>`:''}</div>
+      ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou os filtros.</p></div>` : `
+      <div class="table-wrap"><table class="controle-tab">
+        <thead><tr>
+          ${controleThSort('municipio','Município')}${controleThSort('empresa','Empresa')}${controleThSort('secretaria','Secretaria')}
+          <th>Ordem de compra</th><th>Empenho</th>${controleThSort('valor','Valor','num')}${controleThSort('data','Data')}
+          <th class="num">NF1</th><th class="num">NF2</th><th class="num">NF3</th><th class="num">NF4</th>${controleThSort('saldo','Saldo','num')}<th></th>
+        </tr></thead>
+        <tbody>
+          ${pagina.map(l=>{
+            const nfCel = i=>{
+              const v = l.nfs[i];
+              if(!v) return `<td class="num"></td>`;
+              const tip = (l.nfInfo.length ? (i<3 ? [l.nfInfo[i]] : l.nfInfo.slice(3)) : []).map(n=>'NF '+(n.numeroNota||'—')+' — '+fmtDate(n.data)).join(' + ');
+              return `<td class="num" ${tip?`title="${esc(tip)}"`:''}>${fmtBRL(v)}</td>`;
+            };
+            const corSaldo = l.saldo>0 ? 'var(--warn)' : l.saldo<0 ? 'var(--crit)' : 'var(--ink-faint)';
+            const aoClicar = l.tipo==='sistema'
+              ? (podeVerModulo('pedidos') ? `setView('pedido-detail',{pedidoId:'${l.pedidoId}'})` : '')
+              : (podeEditar ? `openControlePedidoForm('${l.ctrl.id}')` : '');
+            return `<tr ${aoClicar?`onclick="${aoClicar}" style="cursor:pointer"`:''}>
+              <td>${esc(l.municipio)||'—'}</td>
+              <td>${esc(l.empresa)||'—'}</td>
+              <td class="sec" title="${esc(l.secretaria)}">${esc(l.secretaria)||'—'}</td>
+              <td class="mono">${esc(l.ordemCompra)||'—'}</td>
+              <td class="mono">${esc(l.empenho)||'—'}</td>
+              <td class="num">${fmtBRL(l.valor)}</td>
+              <td>${l.data?fmtDate(l.data):'—'}</td>
+              ${nfCel(0)}${nfCel(1)}${nfCel(2)}${nfCel(3)}
+              <td class="num" style="color:${corSaldo};font-weight:600">${fmtBRL(l.saldo)}</td>
+              <td onclick="event.stopPropagation()"><div style="display:flex;align-items:center;justify-content:flex-end;gap:6px">
+                ${l.tipo==='sistema'?`<span class="pill neutral" title="Pedido lançado no sistema — dados atualizados automaticamente">Sistema</span>`:''}
+                ${l.marcado?`<span class="pill warn" title="Marcado com x${l.observacoes?': '+esc(l.observacoes):''}">x</span>`:''}
+                ${!l.marcado && l.observacoes?`<span class="pill neutral" title="${esc(l.observacoes)}">obs.</span>`:''}
+                ${l.candidatoPedidoId && podeEditar?`<button class="btn btn-ghost btn-sm" title="Existe um pedido igual lançado no sistema" onclick="controleVincular('${l.ctrl.id}','${l.candidatoPedidoId}')">Vincular ao pedido</button>`:''}
+                ${podeEditar?`<button class="icon-btn" title="Editar" onclick="${l.tipo==='sistema'?`openControlePedidoForm(null,'${l.pedidoId}')`:`openControlePedidoForm('${l.ctrl.id}')`}">${ICONS.edit}</button>`:''}
+                ${l.tipo==='planilha' && podeExcluir?`<button class="icon-btn" title="Excluir" onclick="deleteControlePedido('${l.ctrl.id}')">${ICONS.trash}</button>`:''}
+              </div></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table></div>
+      <div class="controle-pag">
+        <span>Mostrando ${ini+1}–${Math.min(ini+CONTROLE_POR_PAGINA, rows.length)} de ${rows.length}</span>
+        <span style="display:flex;align-items:center;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="controleMudarPagina(-1)" ${state.controlePagina===0?'disabled':''}>${ICONS.chevronLeft}Anterior</button>
+          <span>Página ${state.controlePagina+1} de ${totalPaginas}</span>
+          <button class="btn btn-ghost btn-sm" onclick="controleMudarPagina(1)" ${state.controlePagina>=totalPaginas-1?'disabled':''}>Próxima${ICONS.chevronRight}</button>
+        </span>
+      </div>`}
+    </div>`;
+}
+
+function controleFormAtualizarSaldo(){
+  const form = document.getElementById('controle-form');
+  const el = document.getElementById('controle-saldo-display');
+  if(!form || !el) return;
+  const n = nome=>Number(form.elements[nome].value)||0;
+  el.textContent = fmtBRL(ctrlArred(n('valor') - n('nf0') - n('nf1') - n('nf2') - n('nf3')));
+}
+
+function openControlePedidoForm(ctrlId, pedidoId){
+  const sistema = !!pedidoId;
+  const ctrl = ctrlId ? state.controlePedidos.find(c=>c.id===ctrlId)
+    : (pedidoId ? state.controlePedidos.find(c=>c.pedidoId===pedidoId) : null);
+  if(ctrlId && !ctrl) return;
+  const linha = sistema ? controleLinhas().find(l=>l.pedidoId===pedidoId) : null;
+  if(sistema && !linha) return;
+  const c = ctrl || {};
+  const nfv = i=>{ const n = (c.nfs||[])[i]; return n ? String(n) : ''; };
+  const municipiosDatalist = [...new Set(controleLinhas().map(l=>l.municipio).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(m=>`<option value="${esc(m)}">`).join('');
+  const empresasDatalist = CONTROLE_EMPRESAS_PADRAO.map(e=>`<option value="${e}">`).join('');
+  const marcadoCheck = `<div class="field span2"><label style="display:flex;align-items:center;gap:8px;font-weight:500"><input type="checkbox" name="marcado" ${c.marcado?'checked':''} style="width:auto">Marcar com "x"</label></div>`;
+  openPanel(`
+    <div class="panel">
+      <div class="panel-header">
+        <h2>${sistema?'Anotações do pedido':(ctrl?'Editar linha':'Nova linha')}</h2>
+        <button class="icon-btn" onclick="closePanel()">${ICONS.close}</button>
+      </div>
+      <form id="controle-form" class="panel-body" onsubmit="return false">
+        ${sistema ? `
+        <div class="field-grid">
+          <div class="field span2"><label>Pedido</label><div class="readval">${esc(linha.municipio)||'—'} · ${esc(linha.empresa)||'—'} · ${esc(linha.secretaria)||'—'}</div></div>
+          <div class="field"><label>Valor</label><div class="readval">${fmtBRL(linha.valor)}</div></div>
+          <div class="field"><label>Faturado (NFs)</label><div class="readval">${fmtBRL(linha.totalNf)}</div></div>
+          <div class="field"><label>Saldo</label><div class="readval">${fmtBRL(linha.saldo)}</div></div>
+          <div class="field span2"><label>Observações</label><textarea name="observacoes">${esc(c.observacoes)}</textarea></div>
+          ${marcadoCheck}
+          <div class="field span2" style="font-size:.78rem;color:var(--ink-faint)">Este pedido foi lançado no módulo Pedidos: valor, data e NFs vêm de lá e se atualizam sozinhos. Aqui você só anota observações e marca com "x".</div>
+        </div>` : `
+        <datalist id="controle-municipios">${municipiosDatalist}</datalist>
+        <datalist id="controle-empresas">${empresasDatalist}</datalist>
+        <div class="field-grid">
+          <div class="field span2"><label>Município</label><input name="municipio" list="controle-municipios" value="${esc(c.municipio)}" required></div>
+          <div class="field"><label>Empresa</label><input name="empresa" list="controle-empresas" value="${esc(c.empresa)}"></div>
+          <div class="field"><label>Secretaria</label><input name="secretaria" value="${esc(c.secretaria)}"></div>
+          <div class="field"><label>Ordem de compra</label><input name="ordemCompra" value="${esc(c.ordemCompra)}"></div>
+          <div class="field"><label>Empenho</label><input name="empenho" value="${esc(c.empenho)}"></div>
+          <div class="field"><label>Valor (R$)</label><input name="valor" type="number" step="0.01" value="${c.valor!==undefined?esc(c.valor):''}" required oninput="controleFormAtualizarSaldo()"></div>
+          <div class="field"><label>Data</label><input name="data" type="date" value="${esc(c.data)}"></div>
+          <div class="field"><label>NF1 (R$)</label><input name="nf0" type="number" step="0.01" value="${esc(nfv(0))}" oninput="controleFormAtualizarSaldo()"></div>
+          <div class="field"><label>NF2 (R$)</label><input name="nf1" type="number" step="0.01" value="${esc(nfv(1))}" oninput="controleFormAtualizarSaldo()"></div>
+          <div class="field"><label>NF3 (R$)</label><input name="nf2" type="number" step="0.01" value="${esc(nfv(2))}" oninput="controleFormAtualizarSaldo()"></div>
+          <div class="field"><label>NF4 (R$)</label><input name="nf3" type="number" step="0.01" value="${esc(nfv(3))}" oninput="controleFormAtualizarSaldo()"></div>
+          <div class="field span2"><label>Saldo (valor − NFs)</label><div class="readval" id="controle-saldo-display">${fmtBRL(ctrlArred((Number(c.valor)||0) - (c.nfs||[]).reduce((s,n)=>s+(Number(n)||0),0)))}</div></div>
+          <div class="field span2"><label>Observações</label><textarea name="observacoes">${esc(c.observacoes)}</textarea></div>
+          ${marcadoCheck}
+        </div>`}
+      </form>
+      <div class="panel-footer">
+        <button class="btn btn-ghost" onclick="closePanel()">Cancelar</button>
+        <button class="btn btn-primary" id="controle-form-submit">${ctrl||sistema?'Salvar':'Adicionar linha'}</button>
+      </div>
+    </div>`);
+  document.getElementById('controle-form-submit').onclick = async ()=>{
+    if(!exigirPermissaoAcao('controlePedidos', (ctrl||sistema)?'editar':'criar')) return;
+    const form = document.getElementById('controle-form');
+    if(!form.reportValidity()) return;
+    const btn = document.getElementById('controle-form-submit');
+    if(btn.disabled) return;
+    btn.disabled = true;
+    const fd = new FormData(form);
+    const marcado = fd.get('marcado')==='on';
+    const observacoes = (fd.get('observacoes')||'').toString().trim();
+    try{
+      if(sistema){
+        await controleSalvarAnotacao(pedidoId, ctrl, {marcado, observacoes});
+      }else{
+        const nfs = [0,1,2,3].map(i=>{ const v = fd.get('nf'+i); return v===null||v===''?null:(Number(v)||null); });
+        const data = {
+          municipio: (fd.get('municipio')||'').toString().trim().toUpperCase(),
+          empresa: (fd.get('empresa')||'').toString().trim().toUpperCase(),
+          secretaria: (fd.get('secretaria')||'').toString().trim(),
+          ordemCompra: (fd.get('ordemCompra')||'').toString().trim(),
+          empenho: (fd.get('empenho')||'').toString().trim(),
+          valor: Number(fd.get('valor'))||0,
+          data: (fd.get('data')||'').toString(),
+          nfs, marcado, observacoes,
+        };
+        if(ctrl) await updateControlePedido(ctrl.id, data);
+        else await createControlePedido({...data, origem:'manual'});
+      }
+      closePanel();
+    }catch(e){ btn.disabled = false; }
+  };
+}
+
+function controleLinhasParaPlanilha(){
+  return controleFiltradas(controleLinhas()).map(l=>[
+    l.municipio, l.empresa, l.secretaria, l.ordemCompra, l.empenho, l.valor, l.data, ...l.nfs, l.saldo, l.marcado?'x':'', l.observacoes,
+  ]);
+}
+const CONTROLE_PLANILHA_HEADER = ['MUNICIPIO','EMPRESA','SECRETARIA','ORDEM DE COMPRA','EMPENHO','VALOR','DATA','NF1','NF2','NF3','NF4','SALDO','X','OBSERVAÇÕES'];
+
+async function copyControlePedidosExcel(){
+  const virg = n=>(n===null||n===undefined||n==='') ? '' : Number(n).toFixed(2).replace('.',',');
+  const linhas = [CONTROLE_PLANILHA_HEADER.join('\t')];
+  controleLinhasParaPlanilha().forEach(r=>{
+    linhas.push([r[0],r[1],r[2],r[3],r[4],virg(r[5]), r[6]?fmtDate(r[6]):'', virg(r[7]),virg(r[8]),virg(r[9]),virg(r[10]), virg(r[11]), r[12], String(r[13]||'').replace(/[\t\r\n]+/g,' ')].join('\t'));
+  });
+  const ok = await copyTextToClipboard(linhas.join('\n'));
+  toast(ok ? 'Copiado! Cole (Ctrl+V) numa planilha do Excel ou Google Sheets.' : 'Não foi possível copiar automaticamente — tente novamente.');
+}
+
+async function exportarControlePedidosXLSX(){
+  const aoa = [CONTROLE_PLANILHA_HEADER];
+  controleLinhasParaPlanilha().forEach(r=>{
+    // Data como número serial do Excel (dias desde 1899-12-30): usar Date faz o SheetJS deslocar 1 dia pelo fuso.
+    const [ano, mes, dia] = (r[6]||'').split('-').map(Number);
+    const serial = ano ? Math.round(Date.UTC(ano, mes-1, dia)/86400000) + 25569 : '';
+    aoa.push([r[0],r[1],r[2],r[3],r[4],r[5], serial, r[7]||'',r[8]||'',r[9]||'',r[10]||'', r[11], r[12], r[13]]);
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:26},{wch:10},{wch:24},{wch:16},{wch:14},{wch:14},{wch:12},{wch:13},{wch:13},{wch:13},{wch:13},{wch:14},{wch:4},{wch:30}];
+  for(let r=1; r<aoa.length; r++){
+    [5,7,8,9,10,11].forEach(c=>{ const cel = ws[XLSX.utils.encode_cell({r,c})]; if(cel && cel.v!=='') cel.z = '"R$" #,##0.00'; });
+    const d = ws[XLSX.utils.encode_cell({r,c:6})]; if(d && typeof d.v==='number') d.z = 'dd/mm/yyyy';
+  }
+  ws['!autofilter'] = {ref: 'A1:N'+aoa.length};
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Controle de Pedidos');
+  const bin = XLSX.write(wb, {type:'array', bookType:'xlsx'});
+  try{
+    await criarDownloadsLocal().save({filename:'controle-de-pedidos.xlsx', data:new Blob([bin], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})});
+    toast('Planilha gerada com '+(aoa.length-1)+' linha(s) (respeita os filtros atuais).');
+  }catch(e){
+    const code = e && e.code;
+    if(code==='declined'){ /* usuário cancelou o download */ }
+    else toast('Não foi possível gerar a planilha.', 'crit');
+  }
 }
 
 function cotacoesFreteFiltradas(){
@@ -6969,6 +7439,7 @@ function renderMain(){
   if(state.view==='ata-detail') return renderAtaDetail();
   if(state.view==='pedidos') return renderPedidosList();
   if(state.view==='pedido-detail') return renderPedidoDetail();
+  if(state.view==='controlepedidos') return renderControlePedidos();
   if(state.view==='pedidoscompra') return renderPedidosCompraList();
   if(state.view==='pedidocompra-detail') return renderPedidoCompraDetail();
   if(state.view==='faturamento') return renderFaturasList();
