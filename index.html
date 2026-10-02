@@ -5094,7 +5094,7 @@ function controleLinhas(){
   linhas.forEach(l=>{
     l.munKey = ctrlNorm(l.municipio);
     l.totalNf = ctrlArred(l.nfs.reduce((s,n)=>s+(Number(n)||0),0));
-    l.saldo = ctrlArred(l.valor - l.totalNf);
+    l.saldo = ctrlArred(ctrlArred(l.valor) - l.totalNf);
     l.mesChave = (l.data||'').slice(0,7);
     l.busca = ctrlNorm([l.municipio,l.empresa,l.secretaria,l.ordemCompra,l.empenho,l.observacoes,l.valor.toFixed(2),...l.nfInfo.map(n=>n.numeroNota)].join(' '));
   });
