@@ -259,6 +259,7 @@ td.wrap-desc, .wrap-desc{ min-width:200px; max-width:320px; white-space:normal; 
 
 @media print{
   .no-print{ display:none !important; }
+  #toast-root, #confirm-root, #panel-root{ display:none !important; }
   .sidebar{ display:none !important; }
   .main{ padding:0; max-width:100%; }
   body{ background:#fff !important; color:#000 !important; }
@@ -3585,7 +3586,14 @@ window.cfNotaFieldChange = function(i, field, value){
   window.__cfNotas[i][field] = field==='valor' ? (Number(value)||0) : value;
   if(field==='valor') cfAtualizarDerivados();
 };
-window.cfAddNota = function(){ window.__cfNotas.push({numero:'',valor:0}); cfRenderNotas(); };
+function cfProximoNumeroNF(){
+  const ultimo = [...window.__cfNotas].reverse().find(n=>String(n.numero||'').trim()!=='');
+  if(!ultimo) return '';
+  const m = String(ultimo.numero).trim().match(/^(.*?)(\d+)(\D*)$/);
+  if(!m) return '';
+  return m[1] + String(Number(m[2])+1).padStart(m[2].length,'0') + m[3];
+}
+window.cfAddNota = function(){ window.__cfNotas.push({numero:cfProximoNumeroNF(), valor:0}); cfRenderNotas(); };
 window.cfRemoveNota = function(i){ window.__cfNotas.splice(i,1); cfRenderNotas(); cfAtualizarDerivados(); };
 
 function cfRenderCotacoes(){
