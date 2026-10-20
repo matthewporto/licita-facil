@@ -287,6 +287,8 @@ td.wrap-desc, .wrap-desc{ min-width:200px; max-width:320px; white-space:normal; 
   #print-area .doc-fields{ margin-bottom:12pt; }
   #print-area .doc-fields div{ font-size:9pt; margin-bottom:5pt; color:#141414; }
   #print-area .doc-fields .label{ color:#646464; }
+  #print-area .doc-fields .doc-hl{ background:#ffff00 !important; padding:1pt 3pt; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  #print-area .doc-fields .doc-hl .label{ color:#141414; }
   #print-area table{ width:100%; border-collapse:collapse; font-size:7pt; }
   #print-area table.doc-table-pedido{ font-size:10pt; }
   #print-area th, #print-area td{ border:1px solid #ccc; padding:3pt 4pt; text-align:left; }
@@ -6185,19 +6187,26 @@ function montarPdfPedidoConteudo(doc, left, p, itens){
     : '';
   const ataDoPedido = ataById(p.ataId);
   const maxValueWidth = miniX - (left+95) - 8;
-  [['Empresa', ataDoPedido && ataDoPedido.empresaNome], ['Órgão', p.orgao], ['Ata/Contrato', p.ataNumero],
+  const nomeEmpresaPedido = ataDoPedido && ataDoPedido.empresaNome;
+  [['Empresa', nomeEmpresaPedido, empresaDestacadaNaImpressao(nomeEmpresaPedido)], ['Órgão', p.orgao], ['Ata/Contrato', p.ataNumero],
    ['Ordem de compra', p.ordemCompra], ['Empenho', p.empenho], ['Local de entrega', localEntregaTexto], ['Status', STATUS_PEDIDO_LABEL[p.status]||p.status],
    ['Valor total', pdfBRL(valorTotalCalc)], ['Saldo a separar', pdfBRL(saldoSeparar)], ['Saldo a entregar', pdfBRL(saldoEntregar)],
    ['Margem de lucro', margemLucroCalc===null?'—':margemLucroCalc.toFixed(1)+'%']]
-  .forEach(([label,value])=>{
-    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(100);
-    doc.text(label+':', left, y);
-    doc.setFont('helvetica','bold'); doc.setTextColor(20);
+  .forEach(([label,value,destaque])=>{
     let valueText = value===undefined||value===null||value===''?'—':String(value);
     if(y<=miniEndY && maxValueWidth>0){
+      doc.setFont('helvetica','bold'); doc.setFontSize(9);
       const linhasValor = doc.splitTextToSize(valueText, maxValueWidth);
       if(linhasValor.length>1) valueText = linhasValor[0].replace(/[.,;\s]+$/,'')+'…';
     }
+    if(destaque){
+      doc.setFont('helvetica','bold'); doc.setFontSize(9);
+      doc.setFillColor(255,255,0);
+      doc.rect(left-2, y-9, 95+doc.getTextWidth(valueText)+4, 12, 'F');
+    }
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(destaque?20:100);
+    doc.text(label+':', left, y);
+    doc.setFont('helvetica','bold'); doc.setTextColor(20);
     doc.text(valueText, left+95, y);
     y += 13;
   });
@@ -6540,9 +6549,14 @@ async function marcarPedidoComoImpresso(pedidoId){
 }
 
 function htmlCamposImpressao(campos){
-  return '<div class="doc-fields">' + campos.map(([label,value])=>
-    '<div><span class="label">'+esc(label)+':</span> <b>'+esc(value===undefined||value===null||value===''?'—':String(value))+'</b></div>'
-  ).join('') + '</div>';
+  return '<div class="doc-fields">' + campos.map(([label,value,destaque])=>{
+    const linha = '<span class="label">'+esc(label)+':</span> <b>'+esc(value===undefined||value===null||value===''?'—':String(value))+'</b>';
+    return '<div>'+(destaque?'<span class="doc-hl">'+linha+'</span>':linha)+'</div>';
+  }).join('') + '</div>';
+}
+// Pedidos da Kazy Distribuidora saem com a linha "Empresa" grifada em amarelo na impressão.
+function empresaDestacadaNaImpressao(nomeEmpresa){
+  return /kazy/i.test(String(nomeEmpresa||''));
 }
 function htmlTabelaImpressao(colunas, linhas, cssClass, colunasHtml){
   const rawCols = colunasHtml || [];
@@ -6575,7 +6589,8 @@ function montarImpressaoPedidoConteudo(p, itens){
     ? p.localEntregaNome + (p.localEntregaEndereco?' — '+p.localEntregaEndereco:'') + (p.localEntregaCidade?', '+p.localEntregaCidade+(p.localEntregaEstado?'/'+p.localEntregaEstado:''):'')
     : '';
   const ataDoPedido = ataById(p.ataId);
-  const campos = [['Empresa', ataDoPedido && ataDoPedido.empresaNome], ['Órgão', p.orgao], ['Ata/Contrato', p.ataNumero],
+  const nomeEmpresaPedido = ataDoPedido && ataDoPedido.empresaNome;
+  const campos = [['Empresa', nomeEmpresaPedido, empresaDestacadaNaImpressao(nomeEmpresaPedido)], ['Órgão', p.orgao], ['Ata/Contrato', p.ataNumero],
    ['Ordem de compra', p.ordemCompra], ['Empenho', p.empenho], ['Local de entrega', localEntregaTexto], ['Status', STATUS_PEDIDO_LABEL[p.status]||p.status],
    ['Valor total', pdfBRL(valorTotalCalc)], ['Saldo a separar', pdfBRL(saldoSeparar)], ['Saldo a entregar', pdfBRL(saldoEntregar)],
    ['Margem de lucro', margemLucroCalc===null?'—':margemLucroCalc.toFixed(1)+'%']];
