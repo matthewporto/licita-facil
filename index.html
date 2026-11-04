@@ -410,6 +410,7 @@ const state = {
   lembreteAlertaMostrado:false,
   mobileNavOpen:false,
   financeiroSearch:'',
+  financeiroAba:'meses', financeiroBuscaTexto:'', financeiroBuscaAno:'todos', financeiroBuscaMes:'todos', financeiroBuscaEmpresa:'todas',
   currentAtaId:null, currentItens:[],
   currentOrgaoId:null, currentLocaisEntrega:[],
   currentPedidoId:null, currentPedidoItens:[],
@@ -7320,7 +7321,80 @@ function financeiroTotaisLinhas(rows){
   const totalPf = rows.reduce((s,f)=>s+(Number(f.valorPessoaFisica)||0),0);
   return { totalSem, totalAltera, totalPf, totalGeral: totalSem+totalAltera };
 }
+function financeiroAbasHtml(){
+  const aba = state.financeiroAba;
+  return `<div class="toolbar" style="margin-bottom:12px">
+    <button class="btn btn-sm ${aba==='meses'?'btn-primary':'btn-ghost'}" onclick="state.financeiroAba='meses'; render();">Por mês</button>
+    <button class="btn btn-sm ${aba==='buscar'?'btn-primary':'btn-ghost'}" onclick="state.financeiroAba='buscar'; render();">${ICONS.search}Pesquisar em todos os meses</button>
+  </div>`;
+}
+function financeiroBuscaLinhas(){
+  let rows = state.financeiro;
+  if(state.financeiroBuscaAno!=='todos') rows = rows.filter(f=>(f.dataVencimento||'').slice(0,4)===state.financeiroBuscaAno);
+  if(state.financeiroBuscaMes!=='todos') rows = rows.filter(f=>(f.dataVencimento||'').slice(5,7)===state.financeiroBuscaMes);
+  if(state.financeiroBuscaEmpresa!=='todas') rows = rows.filter(f=>f.empresaId===state.financeiroBuscaEmpresa);
+  const termos = state.financeiroBuscaTexto.toLowerCase().split(/\s+/).filter(Boolean);
+  if(termos.length) rows = rows.filter(f=>termos.every(t=>financeiroMatchesQuery(f, t)));
+  return [...rows].sort((a,b)=>(b.dataVencimento||'').localeCompare(a.dataVencimento||''));
+}
+function renderFinanceiroBusca(){
+  const rows = financeiroBuscaLinhas();
+  const totais = financeiroTotaisLinhas(rows);
+  const LIMITE = 300;
+  const mostrar = rows.slice(0, LIMITE);
+  const anos = [...new Set(state.financeiro.map(f=>(f.dataVencimento||'').slice(0,4)).filter(Boolean))].sort().reverse();
+  const empresasUsadas = state.empresas;
+  return `
+    <div class="topbar">
+      <div><h1>Financeiro</h1><div class="sub">${state.financeiro.length} lançamento(s) cadastrado(s) no total</div></div>
+      <div class="actions">${podeAcao('financeiro','criar')?`<button class="btn btn-primary" onclick="openFinanceiroForm()">${ICONS.plus}Novo lançamento</button>`:''}</div>
+    </div>
+    ${financeiroAbasHtml()}
+    <div class="toolbar">
+      <div class="search">${ICONS.search}<input id="financeiro-busca-input" placeholder="Buscar em todos os meses: razão/item, NF, parcela, data ou valor..." value="${esc(state.financeiroBuscaTexto)}" oninput="state.financeiroBuscaTexto=this.value; render();"></div>
+      <select class="filter" onchange="state.financeiroBuscaAno=this.value; render();">
+        <option value="todos" ${state.financeiroBuscaAno==='todos'?'selected':''}>Todos os anos</option>
+        ${anos.map(a=>`<option value="${a}" ${state.financeiroBuscaAno===a?'selected':''}>${a}</option>`).join('')}
+      </select>
+      <select class="filter" onchange="state.financeiroBuscaMes=this.value; render();">
+        <option value="todos" ${state.financeiroBuscaMes==='todos'?'selected':''}>Todos os meses</option>
+        ${Array.from({length:12},(_,i)=>{ const v=String(i+1).padStart(2,'0'); return `<option value="${v}" ${state.financeiroBuscaMes===v?'selected':''}>${mesLabel(i+1)}</option>`; }).join('')}
+      </select>
+      <select class="filter" onchange="state.financeiroBuscaEmpresa=this.value; render();">
+        <option value="todas" ${state.financeiroBuscaEmpresa==='todas'?'selected':''}>Todas as empresas</option>
+        ${empresasUsadas.map(e=>`<option value="${e.id}" ${state.financeiroBuscaEmpresa===e.id?'selected':''}>${esc(e.nomeFantasia||e.razaoSocial)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="kpi-row">
+      <div class="kpi"><div class="label">Resultados</div><div class="value">${rows.length}</div></div>
+      <div class="kpi"><div class="label">Sem alterar o lucro</div><div class="value">${fmtBRL(totais.totalSem)}</div></div>
+      <div class="kpi"><div class="label">Altera o lucro</div><div class="value ${totais.totalAltera?'warn':''}">${fmtBRL(totais.totalAltera)}</div></div>
+      <div class="kpi"><div class="label">Pessoa física</div><div class="value">${fmtBRL(totais.totalPf)}</div></div>
+    </div>
+    <div class="card">
+      ${rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou os filtros.</p></div>` : `
+      <div class="table-wrap"><table>
+        <thead><tr><th>Vencimento</th><th>Empresa</th><th>NF</th><th>Razão / Item</th><th>Parcela</th><th class="thc">Sem alterar</th><th class="thc">Altera o lucro</th><th class="thc">Pessoa física</th><th></th></tr></thead>
+        <tbody>
+          ${mostrar.map(f=>`
+            <tr onclick='openFinanceiroForm(${JSON.stringify(f).replace(/'/g,"&#39;")})'>
+              <td style="white-space:nowrap">${fmtDate(f.dataVencimento)}</td>
+              <td class="truncate">${esc(f.empresaNome)||'—'}</td>
+              <td class="mono truncate" style="max-width:110px">${esc(f.nf)||'—'}</td>
+              <td class="truncate">${esc(f.descricao)}</td>
+              <td style="white-space:nowrap">${esc(f.parcela)||'—'}</td>
+              <td class="numc">${Number(f.valorSemAlterar)?fmtBRL(f.valorSemAlterar):'—'}</td>
+              <td class="numc" style="${f.valorAltera>0?'color:var(--warn)':f.valorAltera<0?'color:var(--ok)':''}">${Number(f.valorAltera)?fmtBRL(f.valorAltera):'—'}</td>
+              <td class="numc">${Number(f.valorPessoaFisica)?fmtBRL(f.valorPessoaFisica):'—'}</td>
+              <td onclick="event.stopPropagation()">${podeAcao('financeiro','excluir')?`<button class="icon-btn" onclick="deleteFinanceiro('${f.id}')">${ICONS.trash}</button>`:''}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table></div>
+      ${rows.length>LIMITE?`<div class="sub" style="padding:10px 14px">Mostrando os ${LIMITE} mais recentes de ${rows.length} resultados — refine a busca para ver os demais. Os totais acima consideram todos os ${rows.length}.</div>`:''}`}
+    </div>`;
+}
 function renderFinanceiro(){
+  if(state.financeiroAba==='buscar') return renderFinanceiroBusca();
   const ano = state.financeiroAno;
   const dadosMeses = Array.from({length:12}, (_,i)=>{
     const mes = i+1;
@@ -7340,6 +7414,7 @@ function renderFinanceiro(){
         ${podeAcao('financeiro','criar')?`<button class="btn btn-primary" onclick="openFinanceiroForm()">${ICONS.plus}Novo lançamento</button>`:''}
       </div>
     </div>
+    ${financeiroAbasHtml()}
     <div class="kpi-row">
       <div class="kpi"><div class="label">Sem alterar o lucro (${ano})</div><div class="value">${fmtBRL(anual.totalSem)}</div></div>
       <div class="kpi"><div class="label">Altera o lucro (${ano})</div><div class="value ${anual.totalAltera?'warn':''}">${fmtBRL(anual.totalAltera)}</div></div>
