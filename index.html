@@ -403,6 +403,7 @@ const state = {
   view:'painel',
   atas:[], orgaos:[], pedidos:[], empresas:[], pedidosCompra:[], faturas:[], despesas:[], custosMinimos:[], usuarios:[], lembretes:[], financeiro:[], transportadoras:[], cotacoesFrete:[], controlePedidos:[], notasCompra:[],
   notasCompraAba:'notas', notasCompraBusca:'', notasCompraMes:'todos', notasCompraFornecedor:'todos', notasCompraEmpresa:'todas', currentNotaCompraId:null,
+  vinculosCusto:[], notasCompraVinculo:'todos', nfcSelecao:new Set(),
   controleSearch:'', controleEmpresaFilter:'todas', controleMunicipioFilter:'todos', controleMesFilter:'todos', controleSituacaoFilter:'todas', controleOrigemFilter:'todas',
   controleSort:{campo:'data', dir:'desc'}, controlePagina:0, controleNfMulti:null, controleNfMultiChave:'',
   currentCotacaoFreteId:null, cotacaoFreteSearch:'', cotacaoFreteEntregueFilter:'todas',
@@ -430,7 +431,7 @@ const state = {
   saldoPendenteSearch:'', saldoPendenteEmpresaFilter:'todas', saldoPendenteSelecaoFilter:'todos',
   saldoPendenteFaturamento:[], saldoPendenteFaturamentoLoaded:false, saldoPendenteFaturamentoLoading:false,
   saldoPendenteFaturamentoSearch:'', saldoPendenteFaturamentoEmpresaFilter:'todas', saldoPendenteFaturamentoSelecaoFilter:'todos',
-  unsubAtas:null, unsubOrgaos:null, unsubItens:null, unsubPedidos:null, unsubEmpresas:null, unsubPedidosCompra:null, unsubFaturas:null, unsubDespesas:null, unsubLocaisEntrega:null, unsubCustosMinimos:null, unsubUsuarios:null, unsubLembretes:null, unsubFinanceiro:null, unsubTransportadoras:null, unsubCotacoesFrete:null, unsubControlePedidos:null, unsubNotasCompra:null,
+  unsubAtas:null, unsubOrgaos:null, unsubItens:null, unsubPedidos:null, unsubEmpresas:null, unsubPedidosCompra:null, unsubFaturas:null, unsubDespesas:null, unsubLocaisEntrega:null, unsubCustosMinimos:null, unsubUsuarios:null, unsubLembretes:null, unsubFinanceiro:null, unsubTransportadoras:null, unsubCotacoesFrete:null, unsubControlePedidos:null, unsubNotasCompra:null, unsubVinculosCusto:null,
   nome: localStorage.getItem('semfalta_nome') || '',
   autenticado: false,
 };
@@ -666,6 +667,7 @@ function iniciarModulosPosLogin(){
   subscribeCotacoesFrete();
   subscribeControlePedidos();
   subscribeNotasCompra();
+  subscribeVinculosCusto();
 }
 async function tentarLogin(){
   const nome = document.getElementById('login-nome-input').value.trim();
@@ -705,8 +707,8 @@ async function criarPrimeiroAdmin(){
 }
 function fazerLogout(){
   localStorage.removeItem('semfalta_sessao');
-  [state.unsubAtas, state.unsubOrgaos, state.unsubPedidos, state.unsubEmpresas, state.unsubPedidosCompra, state.unsubFaturas, state.unsubDespesas, state.unsubCustosMinimos, state.unsubLembretes, state.unsubFinanceiro, state.unsubControlePedidos, state.unsubNotasCompra].forEach(u=>{ if(u) u(); });
-  state.notasCompra=[];
+  [state.unsubAtas, state.unsubOrgaos, state.unsubPedidos, state.unsubEmpresas, state.unsubPedidosCompra, state.unsubFaturas, state.unsubDespesas, state.unsubCustosMinimos, state.unsubLembretes, state.unsubFinanceiro, state.unsubControlePedidos, state.unsubNotasCompra, state.unsubVinculosCusto].forEach(u=>{ if(u) u(); });
+  state.notasCompra=[]; state.vinculosCusto=[]; state.nfcSelecao=new Set();
   state.atas=[]; state.orgaos=[]; state.pedidos=[]; state.empresas=[]; state.pedidosCompra=[]; state.faturas=[]; state.despesas=[]; state.custosMinimos=[]; state.lembretes=[]; state.financeiro=[]; state.controlePedidos=[];
   state.lembreteAlertaMostrado = false;
   state.autenticado = false;
@@ -914,6 +916,13 @@ function subscribeNotasCompra(){
     state.notasCompra = snap.docs.map(d=>({id:d.id, ...d.data()}));
     render();
   }, err=>{ console.error(err); toast('Falha ao carregar notas de compra.', 'crit'); });
+}
+function subscribeVinculosCusto(){
+  if(state.unsubVinculosCusto) state.unsubVinculosCusto();
+  state.unsubVinculosCusto = state.db.collection('vinculosCusto').onSnapshot(snap=>{
+    state.vinculosCusto = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    render();
+  }, err=>{ console.error(err); toast('Falha ao carregar vínculos de custo.', 'crit'); });
 }
 function subscribeFinanceiro(){
   if(state.unsubFinanceiro) state.unsubFinanceiro();
@@ -4119,6 +4128,244 @@ function openNotaCompraForm(id){
   };
 }
 
+// ----- Vínculo item de NF ↔ Custo/Mínimo -----
+// Chave do vínculo = CNPJ do fornecedor + código do produto no fornecedor (ou a descrição, se não houver código).
+// Assim, várias cores/estampas (códigos diferentes) podem apontar para um único item do Custo/Mínimo,
+// e uma nota nova com os mesmos códigos já entra vinculada.
+function nfcChaveVinculo(nota, it){
+  const cod = (it.codigo||'').trim() || ('desc:'+(it.descricao||'').toLowerCase().replace(/\s+/g,' ').trim());
+  return nfcDigits(nota.emitenteCnpj)+'|'+cod;
+}
+function nfcVinculoDocId(chave){ return encodeURIComponent(chave).replace(/%/g,'~'); }
+let __nfcVincCache = {src:null, map:null};
+function nfcMapaVinculos(){
+  if(__nfcVincCache.src!==state.vinculosCusto){
+    const m = new Map();
+    state.vinculosCusto.forEach(v=>m.set(v.chave, v));
+    __nfcVincCache = {src:state.vinculosCusto, map:m};
+  }
+  return __nfcVincCache.map;
+}
+// Item do Custo/Mínimo ao qual o item da nota está vinculado (ou null).
+function nfcCustoDoItem(nota, it){
+  const v = nfcMapaVinculos().get(nfcChaveVinculo(nota, it));
+  return v ? (custoMinimoById(v.custoMinimoId)||null) : null;
+}
+// Valor líquido por unidade (sem frete/ST) e % de IPI, no formato que o Custo/Mínimo usa.
+function nfcBaseCusto(it){
+  const liq = (Number(it.valorProduto)||0) - (Number(it.desconto)||0);
+  const qtd = Number(it.quantidade)||0;
+  const valor = qtd>0 ? nfcRound(liq/qtd, 4) : 0;
+  const ipi = it.ipiAliquota>0 ? it.ipiAliquota : (liq>0 && it.ipi>0 ? nfcRound(it.ipi/liq*100, 2) : 0);
+  return {valor, ipi};
+}
+function nfcMaisRecente(a, b){
+  if(!a) return b;
+  const c = (b.nota.dataEmissao||'').localeCompare(a.nota.dataEmissao||'') || (Number(b.nota.numero)||0)-(Number(a.nota.numero)||0);
+  return c>0 ? b : a;
+}
+// Índice de todos os itens de nota por chave de vínculo (guarda o registro mais recente de cada um).
+function nfcIndiceItens(){
+  const idx = new Map();
+  state.notasCompra.forEach(nota=>{
+    (nota.itens||[]).forEach(it=>{
+      const k = nfcChaveVinculo(nota, it);
+      const atual = idx.get(k);
+      const reg = {nota, item:it};
+      const rec = nfcMaisRecente(atual, reg);
+      idx.set(k, {chave:k, nota:rec.nota, item:rec.item, ocorrencias:(atual?atual.ocorrencias:0)+1});
+    });
+  });
+  return idx;
+}
+// Entradas (nota+item) vinculadas a um item do Custo/Mínimo, da mais recente para a mais antiga.
+function nfcItensVinculadosA(custoId){
+  const mapa = nfcMapaVinculos(), out = [];
+  state.notasCompra.forEach(nota=>(nota.itens||[]).forEach(it=>{
+    const v = mapa.get(nfcChaveVinculo(nota, it));
+    if(v && v.custoMinimoId===custoId) out.push({nota, item:it});
+  }));
+  return out.sort((a,b)=>(b.nota.dataEmissao||'').localeCompare(a.nota.dataEmissao||'') || (Number(b.nota.numero)||0)-(Number(a.nota.numero)||0));
+}
+function nfcUltimoCustoPorCusto(){
+  const mapa = nfcMapaVinculos(), res = new Map();
+  state.notasCompra.forEach(nota=>(nota.itens||[]).forEach(it=>{
+    const v = mapa.get(nfcChaveVinculo(nota, it));
+    if(v) res.set(v.custoMinimoId, nfcMaisRecente(res.get(v.custoMinimoId), {nota, item:it}));
+  }));
+  return res;
+}
+
+function nfcToggleSel(chave, on){ if(on) state.nfcSelecao.add(chave); else state.nfcSelecao.delete(chave); render(); }
+function nfcSelecionarVarios(chaves, on){ chaves.forEach(k=>{ if(on) state.nfcSelecao.add(k); else state.nfcSelecao.delete(k); }); render(); }
+function nfcLimparSel(){ state.nfcSelecao.clear(); render(); }
+function nfcBarraSelecao(){
+  const n = state.nfcSelecao.size;
+  if(!n || !podeAcao('notasCompra','editar')) return '';
+  return `<div class="card" style="margin-bottom:12px"><div class="detail-body" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+    <strong>${n} item(ns) selecionado(s)</strong>
+    <button class="btn btn-primary btn-sm" onclick="nfcAbrirVinculo(Array.from(state.nfcSelecao))">${ICONS.tag}Vincular ao Custo/Mínimo</button>
+    <button class="btn btn-ghost btn-sm" onclick="nfcLimparSel()">Limpar seleção</button>
+  </div></div>`;
+}
+function nfcCelulaVinculo(nota, it){
+  const k = nfcChaveVinculo(nota, it);
+  const v = nfcMapaVinculos().get(k);
+  const c = v ? custoMinimoById(v.custoMinimoId) : null;
+  const edita = podeAcao('notasCompra','editar');
+  if(c){
+    return `<span style="cursor:pointer;text-decoration:underline" data-id="${c.id}" onclick="event.stopPropagation(); openCustoMinimoForm(custoMinimoById(this.dataset.id))">${esc(c.item)}${c.marca?` <span style="color:var(--ink-faint)">· ${esc(c.marca)}</span>`:''}</span>
+      ${edita?`<button class="icon-btn" title="Remover vínculo" data-k="${esc(k)}" onclick="event.stopPropagation(); nfcDesvincular(this.dataset.k)">${ICONS.close}</button>`:''}`;
+  }
+  return edita ? `<button class="btn btn-ghost btn-sm" data-k="${esc(k)}" onclick="event.stopPropagation(); nfcAbrirVinculo([this.dataset.k])">Vincular</button>` : '<span style="color:var(--ink-faint)">—</span>';
+}
+function nfcCheckbox(nota, it){
+  if(!podeAcao('notasCompra','editar')) return '';
+  const k = nfcChaveVinculo(nota, it);
+  return `<input type="checkbox" data-k="${esc(k)}" ${state.nfcSelecao.has(k)?'checked':''} onclick="event.stopPropagation()" onchange="nfcToggleSel(this.dataset.k, this.checked)">`;
+}
+
+async function nfcDesvincular(chave){
+  if(!exigirPermissaoAcao('notasCompra','editar')) return;
+  await dbCall(state.db.doc('vinculosCusto/'+nfcVinculoDocId(chave)).delete(), 'Vínculo removido.');
+}
+
+let __nfcVincChaves = [];
+function nfcAbrirVinculo(chaves){
+  if(!exigirPermissaoAcao('notasCompra','editar')) return;
+  const idx = nfcIndiceItens();
+  chaves = chaves.filter(k=>idx.has(k));
+  if(!chaves.length){ toast('Nenhum item válido selecionado.', 'crit'); return; }
+  __nfcVincChaves = chaves;
+  const regs = chaves.map(k=>idx.get(k));
+  const mapa = nfcMapaVinculos();
+  const jaVinc = regs.filter(r=>{ const v = mapa.get(r.chave); return v && custoMinimoById(v.custoMinimoId); }).length;
+  const maisRecente = regs.reduce((a,b)=>nfcMaisRecente(a,b), null);
+  const base = nfcBaseCusto(maisRecente.item);
+  openPanel(`
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Vincular ao Custo/Mínimo</h2>
+        <button class="icon-btn" onclick="closePanel()">${ICONS.close}</button>
+      </div>
+      <div class="panel-body">
+        <p style="margin:0 0 6px"><strong>${regs.length}</strong> item(ns) de nota — todos passam a usar o <strong>mesmo</strong> item do Custo/Mínimo:</p>
+        <div style="max-height:150px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:.8rem;margin-bottom:14px">
+          ${regs.map(r=>`<div style="padding:2px 0">${esc(r.item.descricao)} <span style="color:var(--ink-faint)">· ${esc(r.nota.emitenteNome)}${r.item.codigo?' · cód. '+esc(r.item.codigo):''}</span></div>`).join('')}
+        </div>
+        ${jaVinc?`<p style="font-size:.78rem;color:var(--warn);margin:-6px 0 12px">${jaVinc} deste(s) já estava(m) vinculado(s) a outro item — o vínculo será trocado.</p>`:''}
+        <div class="field"><label><input type="radio" name="nfc-modo" value="existente" checked onchange="nfcVincModo()"> Vincular a um item que já existe</label>
+          <div id="nfc-vinc-existente">
+            <input id="nfc-vinc-busca" placeholder="Buscar por item, fabricante ou marca..." oninput="nfcVincBuscar()" style="margin:6px 0">
+            <div id="nfc-vinc-resultados" style="max-height:200px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:4px 8px"></div>
+          </div>
+        </div>
+        <div class="field" style="margin-top:12px"><label><input type="radio" name="nfc-modo" value="novo" onchange="nfcVincModo()"> Criar um novo item no Custo/Mínimo</label>
+          <div id="nfc-vinc-novo" style="display:none">
+            <input id="nfc-vinc-nome" value="${esc(maisRecente.item.descricao)}" placeholder="Nome do item" style="margin:6px 0 0">
+            <p style="font-size:.72rem;color:var(--ink-faint);margin:2px 0 0">O item novo já nasce com Valor do item ${nfcMoeda4(base.valor)} e IPI ${base.ipi}% (da nota mais recente: NF ${esc(maisRecente.nota.numero)}, ${fmtDate(maisRecente.nota.dataEmissao)}). Margem padrão 25%.</p>
+          </div>
+        </div>
+      </div>
+      <div class="panel-footer">
+        <button class="btn btn-ghost" onclick="closePanel()">Cancelar</button>
+        <button class="btn btn-primary" id="nfc-vinc-confirmar" onclick="nfcConfirmarVinculo()">Vincular</button>
+      </div>
+    </div>`);
+  nfcVincBuscar();
+}
+function nfcVincModo(){
+  const novo = document.querySelector('input[name="nfc-modo"]:checked').value==='novo';
+  document.getElementById('nfc-vinc-existente').style.display = novo?'none':'block';
+  document.getElementById('nfc-vinc-novo').style.display = novo?'block':'none';
+}
+function nfcVincBuscar(){
+  const box = document.getElementById('nfc-vinc-resultados');
+  if(!box) return;
+  const termos = (document.getElementById('nfc-vinc-busca').value||'').toLowerCase().split(/\s+/).filter(Boolean);
+  const selecionado = (document.querySelector('input[name="nfc-custo"]:checked')||{}).value;
+  let rows = state.custosMinimos.filter(c=>{ const t = [c.item,c.fabricante,c.marca].join(' ').toLowerCase(); return termos.every(x=>t.includes(x)); });
+  rows = [...rows].sort((a,b)=>(a.item||'').localeCompare(b.item||''));
+  const total = rows.length;
+  box.innerHTML = total===0 ? `<div style="padding:8px;color:var(--ink-faint);font-size:.8rem">Nenhum item encontrado.</div>` :
+    rows.slice(0,40).map(c=>`<label style="display:block;padding:4px 0;font-size:.82rem;cursor:pointer"><input type="radio" name="nfc-custo" value="${c.id}" ${selecionado===c.id?'checked':''}> ${esc(c.item)}${c.marca?` <span style="color:var(--ink-faint)">· ${esc(c.marca)}</span>`:''}${c.fabricante?` <span style="color:var(--ink-faint)">· ${esc(c.fabricante)}</span>`:''}</label>`).join('') +
+    (total>40?`<div style="padding:6px 0;color:var(--ink-faint);font-size:.76rem">Mostrando 40 de ${total} — refine a busca.</div>`:'');
+}
+async function nfcConfirmarVinculo(){
+  if(!exigirPermissaoAcao('notasCompra','editar')) return;
+  const modo = document.querySelector('input[name="nfc-modo"]:checked').value;
+  const idx = nfcIndiceItens();
+  const regs = __nfcVincChaves.map(k=>idx.get(k)).filter(Boolean);
+  if(!regs.length) return;
+  let custoId, novoItem = null;
+  if(modo==='novo'){
+    if(!exigirPermissaoAcao('custosMinimos','criar')) return;
+    const nome = document.getElementById('nfc-vinc-nome').value.trim();
+    if(!nome){ toast('Informe o nome do novo item.', 'crit'); return; }
+    const base = nfcBaseCusto(regs.reduce((a,b)=>nfcMaisRecente(a,b), null).item);
+    novoItem = { item:nome, fabricante:'', marca:'', custo:base.valor||null, frete:null, ipi:base.ipi||null, difal:null, outraDisp:null, margemVenda:25, numeroUnidades:null, dataAtualizacao:todayISO() };
+    custoId = state.db.collection('custosMinimos').doc().id;
+  }else{
+    const sel = document.querySelector('input[name="nfc-custo"]:checked');
+    if(!sel){ toast('Escolha o item do Custo/Mínimo.', 'crit'); return; }
+    custoId = sel.value;
+  }
+  try{
+    const agora = new Date().toISOString();
+    for(let i=0;i<regs.length;i+=400){
+      const batch = state.db.batch();
+      if(i===0 && novoItem) batch.set(state.db.doc('custosMinimos/'+custoId), novoItem);
+      regs.slice(i,i+400).forEach(r=>{
+        batch.set(state.db.doc('vinculosCusto/'+nfcVinculoDocId(r.chave)), {
+          chave:r.chave, fornecedorCnpj:nfcDigits(r.nota.emitenteCnpj), fornecedorNome:r.nota.emitenteNome||'',
+          codigo:r.item.codigo||'', descricao:r.item.descricao||'', custoMinimoId:custoId,
+          vinculadoPor:state.nome||'—', vinculadoEm:agora,
+        });
+      });
+      await batch.commit();
+    }
+  }catch(e){
+    console.error(e);
+    toast('Não foi possível vincular: '+(e && e.message ? e.message : 'erro desconhecido'), 'crit');
+    return;
+  }
+  state.nfcSelecao.clear();
+  closePanel();
+  toast(regs.length+' item(ns) vinculado(s)'+(novoItem?' a um novo item do Custo/Mínimo.':'.'));
+  render();
+}
+
+// Seção "Notas de compra vinculadas" dentro do formulário do Custo/Mínimo.
+function nfcSecaoCustoNotas(custoId){
+  const lista = nfcItensVinculadosA(custoId);
+  if(!lista.length) return `<p style="font-size:.78rem;color:var(--ink-faint);margin:14px 0 0">Nenhum item de nota de compra vinculado. Vincule em <em>Notas de Compra → Itens</em>.</p>`;
+  const MAX = 10;
+  return `
+    <h3 class="section-title" style="margin:18px 0 6px">Notas de compra vinculadas (${lista.length})</h3>
+    <div style="overflow:auto"><table style="font-size:.78rem">
+      <thead><tr><th>Emissão</th><th>Fornecedor / NF</th><th>Item na nota</th><th class="thc">Valor líq.</th><th class="thc">IPI</th><th></th></tr></thead>
+      <tbody>
+        ${lista.slice(0,MAX).map(({nota,item})=>{ const b = nfcBaseCusto(item); return `
+          <tr>
+            <td style="white-space:nowrap">${fmtDate(nota.dataEmissao)}</td>
+            <td>${esc(nota.emitenteNome)} <span style="color:var(--ink-faint)">· NF ${esc(nota.numero)}</span></td>
+            <td>${esc(item.descricao)}</td>
+            <td class="numc">${nfcMoeda4(b.valor)}</td>
+            <td class="numc">${b.ipi?b.ipi+'%':'—'}</td>
+            <td><button type="button" class="btn btn-ghost btn-sm" onclick="custoMinimoUsarCustoNf(${b.valor},${b.ipi})">Usar este custo</button></td>
+          </tr>`; }).join('')}
+      </tbody>
+    </table></div>
+    ${lista.length>MAX?`<p style="font-size:.72rem;color:var(--ink-faint);margin:4px 0 0">Mostrando as ${MAX} mais recentes de ${lista.length}.</p>`:''}
+    <p style="font-size:.72rem;color:var(--ink-faint);margin:4px 0 0">"Usar este custo" só preenche Valor do item e IPI acima; nada muda até você clicar em Salvar. Valor líq. = (produto − desconto) ÷ quantidade, sem frete nem ICMS-ST.</p>`;
+}
+function custoMinimoUsarCustoNf(valor, ipi){
+  const set = (id, v)=>{ const el = document.getElementById(id); if(el){ el.value = v; el.dispatchEvent(new Event('input')); } };
+  set('custo-minimo-custo-input', valor);
+  set('custo-minimo-ipi-input', ipi||'');
+  toast('Valor do item e IPI preenchidos — clique em Salvar para gravar.');
+}
+
 function nfcTextoNota(n){
   return [n.numero, n.serie, n.emitenteNome, n.emitenteFantasia, n.emitenteCnpj, nfcDigits(n.emitenteCnpj), n.chave, n.dataEmissao, fmtDate(n.dataEmissao),
     n.destinatarioNome, n.empresaNome, n.observacao, String(n.valorNota), fmtBRL(n.valorNota)].join(' ').toLowerCase();
@@ -4146,6 +4393,10 @@ function notasCompraItensBuscados(){
   notasCompraFiltradas().forEach(n=>{
     const tn = nfcTextoNota(n);
     (n.itens||[]).forEach(it=>{
+      if(state.notasCompraVinculo!=='todos'){
+        const tem = !!nfcCustoDoItem(n, it);
+        if((state.notasCompraVinculo==='com') !== tem) return;
+      }
       if(!termos.length || termos.every(t=> tn.includes(t) || nfcTextoItem(it).includes(t))) out.push({nota:n, item:it});
     });
   });
@@ -4194,7 +4445,13 @@ function renderNotasCompra(){
         <option value="todas">Todas as empresas</option>
         ${state.empresas.map(e=>`<option value="${e.id}" ${state.notasCompraEmpresa===e.id?'selected':''}>${esc(e.nomeFantasia||e.razaoSocial)}</option>`).join('')}
       </select>
+      ${aba==='itens'?`<select class="filter" onchange="state.notasCompraVinculo=this.value; render();">
+        <option value="todos" ${state.notasCompraVinculo==='todos'?'selected':''}>Todos (vinculados ou não)</option>
+        <option value="sem" ${state.notasCompraVinculo==='sem'?'selected':''}>Sem vínculo com Custo/Mínimo</option>
+        <option value="com" ${state.notasCompraVinculo==='com'?'selected':''}>Já vinculados</option>
+      </select>`:''}
     </div>
+    ${aba==='itens'?nfcBarraSelecao():''}
     <div class="kpi-row">
       <div class="kpi"><div class="label">${aba==='itens'?'Itens encontrados':'Notas'}</div><div class="value">${aba==='itens'?itensRows.length:notas.length}</div></div>
       <div class="kpi"><div class="label">Valor total das notas</div><div class="value">${fmtBRL(totalNotas)}</div></div>
@@ -4209,14 +4466,18 @@ function renderNotasCompra(){
 
   if(aba==='itens'){
     const mostrar = itensRows.slice(0, LIMITE);
+    const chavesTodas = itensRows.map(r=>nfcChaveVinculo(r.nota, r.item));
+    const todasSel = chavesTodas.length>0 && chavesTodas.every(k=>state.nfcSelecao.has(k));
+    const podeSel = podeAcao('notasCompra','editar');
     return topo + `
     <div class="card" ${dropAttrs}>
       ${state.notasCompra.length===0 ? vazio : itensRows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou os filtros.</p></div>` : `
       <div class="table-wrap"><table>
-        <thead><tr><th>Emissão</th><th>Fornecedor</th><th>NF</th><th>Código</th><th>Descrição</th><th>NCM</th><th>Un.</th><th class="thc">Qtd.</th><th class="thc">Vl. unit.</th><th class="thc">IPI</th><th class="thc">Custo unit. c/ impostos</th><th class="thc">Total do item</th></tr></thead>
+        <thead><tr><th style="width:28px">${podeSel?`<input type="checkbox" title="Selecionar todos os ${itensRows.length} resultados" ${todasSel?'checked':''} onchange="nfcSelecionarVarios(${esc(JSON.stringify(chavesTodas))}, this.checked)">`:''}</th><th>Emissão</th><th>Fornecedor</th><th>NF</th><th>Código</th><th>Descrição</th><th>NCM</th><th>Un.</th><th class="thc">Qtd.</th><th class="thc">Vl. unit.</th><th class="thc">IPI</th><th class="thc">Custo unit. c/ impostos</th><th class="thc">Total do item</th><th>Custo/Mínimo</th></tr></thead>
         <tbody>
           ${mostrar.map(({nota:n,item:it})=>`
             <tr onclick="setView('notacompra-detail',{notaCompraId:'${n.id}'})">
+              <td onclick="event.stopPropagation()">${nfcCheckbox(n, it)}</td>
               <td style="white-space:nowrap">${fmtDate(n.dataEmissao)}</td>
               <td class="truncate">${esc(n.emitenteNome)}</td>
               <td class="mono">${esc(n.numero)}</td>
@@ -4229,6 +4490,7 @@ function renderNotasCompra(){
               <td class="numc">${it.ipi>0?fmtBRL(it.ipi)+(it.ipiAliquota>0?` <span style="color:var(--ink-faint)">(${it.ipiAliquota}%)</span>`:''):'—'}</td>
               <td class="numc"><strong>${nfcMoeda4(it.custoUnitario)}</strong></td>
               <td class="numc">${fmtBRL(it.custoTotal)}</td>
+              <td onclick="event.stopPropagation()" style="white-space:nowrap">${nfcCelulaVinculo(n, it)}</td>
             </tr>`).join('')}
         </tbody>
       </table></div>
@@ -4314,12 +4576,14 @@ function renderNotaCompraDetail(){
     </div>
 
     <div class="itens-head"><h3 class="section-title" style="margin:0">Itens (${itens.length})</h3></div>
+    ${nfcBarraSelecao()}
     <div class="card">
       <div class="table-wrap"><table>
-        <thead><tr><th>#</th><th>Código</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>Un.</th><th class="thc">Qtd.</th><th class="thc">Vl. unit.</th><th class="thc">Produto</th><th class="thc">Desc.</th><th class="thc">Frete</th><th class="thc">IPI</th><th class="thc">ICMS-ST</th><th class="thc">Custo total</th><th class="thc">Custo unit.</th></tr></thead>
+        <thead><tr><th style="width:28px">${podeAcao('notasCompra','editar')?`<input type="checkbox" title="Selecionar todos os itens da nota" ${itens.length&&itens.every(it=>state.nfcSelecao.has(nfcChaveVinculo(n,it)))?'checked':''} onchange="nfcSelecionarVarios(${esc(JSON.stringify(itens.map(it=>nfcChaveVinculo(n,it))))}, this.checked)">`:''}</th><th>#</th><th>Código</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>Un.</th><th class="thc">Qtd.</th><th class="thc">Vl. unit.</th><th class="thc">Produto</th><th class="thc">Desc.</th><th class="thc">Frete</th><th class="thc">IPI</th><th class="thc">ICMS-ST</th><th class="thc">Custo total</th><th class="thc">Custo unit.</th><th>Custo/Mínimo</th></tr></thead>
         <tbody>
           ${itens.map(it=>`
             <tr>
+              <td>${nfcCheckbox(n, it)}</td>
               <td>${it.numero}</td>
               <td class="mono">${esc(it.codigo)||'—'}</td>
               <td>${esc(it.descricao)}${it.infAdicional?`<div style="font-size:.72rem;color:var(--ink-faint)">${esc(it.infAdicional)}</div>`:''}</td>
@@ -4335,10 +4599,11 @@ function renderNotaCompraDetail(){
               <td class="numc">${it.icmsSt>0?fmtBRL(it.icmsSt):'—'}</td>
               <td class="numc">${fmtBRL(it.custoTotal)}</td>
               <td class="numc"><strong>${nfcMoeda4(it.custoUnitario)}</strong></td>
+              <td style="white-space:nowrap">${nfcCelulaVinculo(n, it)}</td>
             </tr>`).join('')}
         </tbody>
       </table></div>
-      <div class="sub" style="padding:10px 14px">Custo = produto − desconto + frete + seguro + outras despesas + IPI + ICMS-ST. Frete, seguro, desconto e outras despesas informados só no total da NF são rateados pelo valor dos produtos.</div>
+      <div class="sub" style="padding:10px 14px">Custo =produto − desconto + frete + seguro + outras despesas + IPI + ICMS-ST. Frete, seguro, desconto e outras despesas informados só no total da NF são rateados pelo valor dos produtos.</div>
     </div>
 
     ${(n.duplicatas||[]).length?`
@@ -4537,7 +4802,7 @@ function openCustoMinimoForm(existing){
             <input name="marca" value="${esc(c.marca)}">
           </div>
           <div class="field"><label>Valor do item (R$)</label>
-            <input type="number" min="0" step="0.01" name="custo" id="custo-minimo-custo-input" value="${c.custo??''}" placeholder="0,00">
+            <input type="number" min="0" step="0.01" name="custo" id="custo-minimo-custo-input" step="any" value="${c.custo??''}" placeholder="0,00">
           </div>
           <div class="field"><label>Frete (%)</label>
             <input type="number" min="0" step="0.01" name="frete" id="custo-minimo-frete-input" value="${c.frete??''}" placeholder="0">
@@ -4576,6 +4841,7 @@ function openCustoMinimoForm(existing){
             <p style="font-size:.72rem;color:var(--ink-faint);margin:2px 0 0">Calculado: Custo Unitário × (1 + Frete% + Difal% + Outra Disp.%) × (1 + Margem de venda%)</p>
           </div>
         </div>
+        ${existing && existing.id ? nfcSecaoCustoNotas(existing.id) : ''}
       </form>
       <div class="panel-footer">
         <button class="btn btn-ghost" onclick="closePanel()">Cancelar</button>
@@ -7745,6 +8011,7 @@ function renderCustosMinimos(){
     rows = rows.filter(c=> (c.item||'').toLowerCase().includes(q) || (c.fabricante||'').toLowerCase().includes(q) || (c.marca||'').toLowerCase().includes(q));
   }
   rows = [...rows].sort((a,b)=>(a.item||'').localeCompare(b.item||''));
+  const ultimosNf = nfcUltimoCustoPorCusto();
 
   return `
     <div class="topbar">
@@ -7760,7 +8027,7 @@ function renderCustosMinimos(){
         ${podeAcao('custosMinimos','criar')?`<button class="btn btn-primary" onclick="openCustoMinimoForm()">${ICONS.plus}Novo item</button>`:''}</div>
       ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca.</p></div>` : `
       <div class="table-wrap"><table>
-        <thead><tr><th>Data</th><th>Item</th><th>Fabricante</th><th>Marca</th><th>Valor do item</th><th>Frete</th><th>IPI</th><th>Difal</th><th>Outra Disp.</th><th>Custo</th><th>Custo Unit.</th><th>Margem</th><th>Mínimo</th><th>Nº Unid.</th><th>Mínimo Unit.</th><th></th></tr></thead>
+        <thead><tr><th>Data</th><th>Item</th><th>Fabricante</th><th>Marca</th><th>Valor do item</th><th>Frete</th><th>IPI</th><th>Difal</th><th>Outra Disp.</th><th>Custo</th><th>Custo Unit.</th><th>Margem</th><th>Mínimo</th><th>Nº Unid.</th><th>Mínimo Unit.</th><th title="Valor líquido (sem frete/ST) do item na nota de compra vinculada mais recente">Últ. custo em NF</th><th></th></tr></thead>
         <tbody>
           ${rows.map(c=>`
             <tr onclick='openCustoMinimoForm(${JSON.stringify(c).replace(/'/g,"&#39;")})'>
@@ -7779,6 +8046,7 @@ function renderCustosMinimos(){
               <td class="num">${c.custo>0?fmtBRL(custoMinimoValor(c)):'—'}</td>
               <td class="num">${c.numeroUnidades>0?c.numeroUnidades:'—'}</td>
               <td class="num">${c.numeroUnidades>0?fmtBRL(minimoUnitarioValor(c)):'—'}</td>
+              <td class="num" style="white-space:nowrap">${(()=>{ const u = ultimosNf.get(c.id); if(!u) return '—'; const b = nfcBaseCusto(u.item); const dif = c.custo>0 && Math.abs(b.valor-c.custo)>0.005; return `${nfcMoeda4(b.valor)}${dif?` <span title="Diferente do Valor do item cadastrado (${fmtBRL(c.custo)})" style="color:var(--warn)">${b.valor>c.custo?'▲':'▼'}</span>`:''}<div style="font-size:.7rem;color:var(--ink-faint)">${fmtDate(u.nota.dataEmissao)}</div>`; })()}</td>
               <td onclick="event.stopPropagation()">${podeAcao('custosMinimos','excluir')?`<button class="icon-btn" onclick="deleteCustoMinimo('${c.id}')">${ICONS.trash}</button>`:''}</td>
             </tr>`).join('')}
         </tbody>
