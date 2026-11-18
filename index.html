@@ -405,7 +405,7 @@ const state = {
   view:'painel',
   atas:[], orgaos:[], pedidos:[], empresas:[], pedidosCompra:[], faturas:[], despesas:[], custosMinimos:[], usuarios:[], lembretes:[], financeiro:[], transportadoras:[], cotacoesFrete:[], controlePedidos:[], controleManual:[], relatorioNF:[], relatorioNFPgtos:[], relatorioNFConfig:{}, notasCompra:[],
   notasCompraAba:'notas', notasCompraBusca:'', notasCompraMes:'todos', notasCompraFornecedor:'todos', notasCompraEmpresa:'todas', currentNotaCompraId:null,
-  vinculosCusto:[], notasCompraVinculo:'todos', nfcSelecao:new Set(),
+  vinculosCusto:[], marcasNfc:[], notasCompraVinculo:'todos', nfcSelecao:new Set(),
   controleSearch:'', controleEmpresaFilter:'todas', controleMunicipioFilter:'todos', controleMesFilter:'todos', controleSituacaoFilter:'todas', controleOrigemFilter:'todas',
   controleSort:{campo:'data', dir:'desc'}, controlePagina:0, controleNfMulti:null, controleNfMultiChave:'',
   cmanSearch:'', cmanClienteFilter:'todos', cmanMarcaFilter:'todas', cmanMesFilter:'todos', cmanSeparadoFilter:'todos', cmanPedidoFilter:'todos', cmanSort:{campo:'data', dir:'desc'}, cmanPagina:0, cmanSelecao:new Set(),
@@ -435,7 +435,7 @@ const state = {
   saldoPendenteSearch:'', saldoPendenteEmpresaFilter:'todas', saldoPendenteSelecaoFilter:'todos',
   saldoPendenteFaturamento:[], saldoPendenteFaturamentoLoaded:false, saldoPendenteFaturamentoLoading:false,
   saldoPendenteFaturamentoSearch:'', saldoPendenteFaturamentoEmpresaFilter:'todas', saldoPendenteFaturamentoSelecaoFilter:'todos',
-  unsubAtas:null, unsubOrgaos:null, unsubItens:null, unsubPedidos:null, unsubEmpresas:null, unsubPedidosCompra:null, unsubFaturas:null, unsubDespesas:null, unsubLocaisEntrega:null, unsubCustosMinimos:null, unsubUsuarios:null, unsubLembretes:null, unsubFinanceiro:null, unsubTransportadoras:null, unsubCotacoesFrete:null, unsubControlePedidos:null, unsubNotasCompra:null, unsubVinculosCusto:null,
+  unsubAtas:null, unsubOrgaos:null, unsubItens:null, unsubPedidos:null, unsubEmpresas:null, unsubPedidosCompra:null, unsubFaturas:null, unsubDespesas:null, unsubLocaisEntrega:null, unsubCustosMinimos:null, unsubUsuarios:null, unsubLembretes:null, unsubFinanceiro:null, unsubTransportadoras:null, unsubCotacoesFrete:null, unsubControlePedidos:null, unsubNotasCompra:null, unsubVinculosCusto:null, unsubMarcasNfc:null,
   nome: localStorage.getItem('semfalta_nome') || '',
   autenticado: false,
 };
@@ -674,6 +674,7 @@ function iniciarModulosPosLogin(){
   subscribeRelatorioNF();
   subscribeNotasCompra();
   subscribeVinculosCusto();
+  subscribeMarcasNfc();
 }
 async function tentarLogin(){
   const nome = document.getElementById('login-nome-input').value.trim();
@@ -713,8 +714,8 @@ async function criarPrimeiroAdmin(){
 }
 function fazerLogout(){
   localStorage.removeItem('semfalta_sessao');
-  [state.unsubAtas, state.unsubOrgaos, state.unsubPedidos, state.unsubEmpresas, state.unsubPedidosCompra, state.unsubFaturas, state.unsubDespesas, state.unsubCustosMinimos, state.unsubLembretes, state.unsubFinanceiro, state.unsubControlePedidos, state.unsubControleManual, state.unsubNotasCompra, state.unsubVinculosCusto].forEach(u=>{ if(u) u(); });
-  state.controleManual=[]; state.cmanSelecao=new Set(); state.relatorioNF=[]; state.relatorioNFPgtos=[]; state.relatorioNFConfig={}; state.rnfSelecao=new Set(); (state.unsubRelatorioNF||[]).forEach(u=>{ if(u) u(); }); state.unsubRelatorioNF=[]; state.notasCompra=[]; state.vinculosCusto=[]; state.nfcSelecao=new Set();
+  [state.unsubAtas, state.unsubOrgaos, state.unsubPedidos, state.unsubEmpresas, state.unsubPedidosCompra, state.unsubFaturas, state.unsubDespesas, state.unsubCustosMinimos, state.unsubLembretes, state.unsubFinanceiro, state.unsubControlePedidos, state.unsubControleManual, state.unsubNotasCompra, state.unsubVinculosCusto, state.unsubMarcasNfc].forEach(u=>{ if(u) u(); });
+  state.controleManual=[]; state.cmanSelecao=new Set(); state.relatorioNF=[]; state.relatorioNFPgtos=[]; state.relatorioNFConfig={}; state.rnfSelecao=new Set(); (state.unsubRelatorioNF||[]).forEach(u=>{ if(u) u(); }); state.unsubRelatorioNF=[]; state.notasCompra=[]; state.vinculosCusto=[]; state.marcasNfc=[]; state.nfcSelecao=new Set();
   state.atas=[]; state.orgaos=[]; state.pedidos=[]; state.empresas=[]; state.pedidosCompra=[]; state.faturas=[]; state.despesas=[]; state.custosMinimos=[]; state.lembretes=[]; state.financeiro=[]; state.controlePedidos=[];
   state.lembreteAlertaMostrado = false;
   state.autenticado = false;
@@ -947,6 +948,14 @@ function subscribeVinculosCusto(){
     state.vinculosCusto = snap.docs.map(d=>({id:d.id, ...d.data()}));
     render();
   }, err=>{ console.error(err); toast('Falha ao carregar vínculos de custo.', 'crit'); });
+}
+function subscribeMarcasNfc(){
+  if(state.unsubMarcasNfc) state.unsubMarcasNfc();
+  state.unsubMarcasNfc = state.db.collection('marcasNotaCompra').onSnapshot(snap=>{
+    state.marcasNfc = snap.docs.map(d=>({id:d.id, ...d.data()}));
+    const a = document.activeElement;
+    if(!(a && a.classList && a.classList.contains('nfc-marca-input'))) render();
+  }, err=>{ console.error(err); toast('Falha ao carregar marcas das notas de compra.', 'crit'); });
 }
 function subscribeFinanceiro(){
   if(state.unsubFinanceiro) state.unsubFinanceiro();
@@ -4220,6 +4229,41 @@ function nfcUltimoCustoPorCusto(){
   return res;
 }
 
+// Marca do fornecedor por produto: guardada pela mesma chave do vínculo (CNPJ + código), vale para todas as notas do produto.
+let __nfcMarcaCache = {src:null, map:null};
+function nfcMapaMarcas(){
+  if(__nfcMarcaCache.src!==state.marcasNfc){
+    const m = new Map();
+    state.marcasNfc.forEach(x=>m.set(x.chave, x.marca||''));
+    __nfcMarcaCache = {src:state.marcasNfc, map:m};
+  }
+  return __nfcMarcaCache.map;
+}
+function nfcMarcaDoItem(nota, it){ return nfcMapaMarcas().get(nfcChaveVinculo(nota, it)) || ''; }
+function nfcCelulaMarca(nota, it){
+  const k = nfcChaveVinculo(nota, it), m = nfcMarcaDoItem(nota, it);
+  if(!podeAcao('notasCompra','editar')) return esc(m)||'<span style="color:var(--ink-faint)">—</span>';
+  return `<input type="text" class="nfc-marca-input" style="width:120px" data-k="${esc(k)}" value="${esc(m)}" placeholder="Marca" onclick="event.stopPropagation()" onchange="nfcSalvarMarca(this.dataset.k, this.value)">`;
+}
+async function nfcSalvarMarca(chave, valor){
+  if(!exigirPermissaoAcao('notasCompra','editar')) return;
+  valor = String(valor||'').trim();
+  const ref = state.db.doc('marcasNotaCompra/'+nfcVinculoDocId(chave));
+  if(!valor){ await dbCall(ref.delete(), 'Marca removida.'); return; }
+  await dbCall(ref.set({chave, marca:valor, atualizadoPor:state.nome||'—', atualizadoEm:new Date().toISOString()}), 'Marca salva.');
+}
+async function nfcAplicarMarcaSelecao(){
+  if(!exigirPermissaoAcao('notasCompra','editar')) return;
+  const el = document.getElementById('nfc-marca-lote');
+  const valor = el ? el.value.trim() : '';
+  const chaves = Array.from(state.nfcSelecao);
+  if(!valor){ toast('Digite a marca para aplicar aos itens selecionados.', 'crit'); return; }
+  for(let i=0;i<chaves.length;i+=400){
+    const batch = state.db.batch();
+    chaves.slice(i,i+400).forEach(k=>batch.set(state.db.doc('marcasNotaCompra/'+nfcVinculoDocId(k)), {chave:k, marca:valor, atualizadoPor:state.nome||'—', atualizadoEm:new Date().toISOString()}));
+    await dbCall(batch.commit(), i+400>=chaves.length ? 'Marca aplicada a '+chaves.length+' item(ns).' : null);
+  }
+}
 function nfcToggleSel(chave, on){ if(on) state.nfcSelecao.add(chave); else state.nfcSelecao.delete(chave); render(); }
 function nfcSelecionarVarios(chaves, on){ chaves.forEach(k=>{ if(on) state.nfcSelecao.add(k); else state.nfcSelecao.delete(k); }); render(); }
 function nfcLimparSel(){ state.nfcSelecao.clear(); render(); }
@@ -4229,6 +4273,8 @@ function nfcBarraSelecao(){
   return `<div class="card" style="margin-bottom:12px"><div class="detail-body" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <strong>${n} item(ns) selecionado(s)</strong>
     <button class="btn btn-primary btn-sm" onclick="nfcAbrirVinculo(Array.from(state.nfcSelecao))">${ICONS.tag}Vincular ao Custo/Mínimo</button>
+    <input id="nfc-marca-lote" type="text" placeholder="Marca do fornecedor" style="width:170px">
+    <button class="btn btn-ghost btn-sm" onclick="nfcAplicarMarcaSelecao()">Aplicar marca</button>
     <button class="btn btn-ghost btn-sm" onclick="nfcLimparSel()">Limpar seleção</button>
   </div></div>`;
 }
@@ -4394,7 +4440,7 @@ function nfcTextoNota(n){
   return [n.numero, n.serie, n.emitenteNome, n.emitenteFantasia, n.emitenteCnpj, nfcDigits(n.emitenteCnpj), n.chave, n.dataEmissao, fmtDate(n.dataEmissao),
     n.destinatarioNome, n.empresaNome, n.observacao, String(n.valorNota), fmtBRL(n.valorNota)].join(' ').toLowerCase();
 }
-function nfcTextoItem(it){ return [it.codigo, it.descricao, it.ncm, it.ean].join(' ').toLowerCase(); }
+function nfcTextoItem(it, nota){ return [it.codigo, it.descricao, it.ncm, it.ean, nota?nfcMarcaDoItem(nota,it):''].join(' ').toLowerCase(); }
 function notasCompraFiltradas(){
   let rows = state.notasCompra;
   if(state.notasCompraMes!=='todos') rows = rows.filter(n=>(n.dataEmissao||'').slice(0,7)===state.notasCompraMes);
@@ -4408,7 +4454,7 @@ function notasCompraBuscadas(){
   if(!termos.length) return notas;
   return notas.filter(n=>{
     const tn = nfcTextoNota(n);
-    return termos.every(t=> tn.includes(t) || (n.itens||[]).some(it=>nfcTextoItem(it).includes(t)));
+    return termos.every(t=> tn.includes(t) || (n.itens||[]).some(it=>nfcTextoItem(it,n).includes(t)));
   });
 }
 function notasCompraItensBuscados(){
@@ -4421,7 +4467,7 @@ function notasCompraItensBuscados(){
         const tem = !!nfcCustoDoItem(n, it);
         if((state.notasCompraVinculo==='com') !== tem) return;
       }
-      if(!termos.length || termos.every(t=> tn.includes(t) || nfcTextoItem(it).includes(t))) out.push({nota:n, item:it});
+      if(!termos.length || termos.every(t=> tn.includes(t) || nfcTextoItem(it,n).includes(t))) out.push({nota:n, item:it});
     });
   });
   return out;
@@ -4456,7 +4502,7 @@ function renderNotasCompra(){
       <button class="btn btn-sm ${aba==='itens'?'btn-primary':'btn-ghost'}" onclick="state.notasCompraAba='itens'; render();">Itens (histórico de custo)</button>
     </div>
     <div class="toolbar">
-      <div class="search">${ICONS.search}<input id="nfc-busca-input" placeholder="Buscar por NF, fornecedor, CNPJ, chave, item, código, NCM ou valor..." value="${esc(state.notasCompraBusca)}" oninput="state.notasCompraBusca=this.value; render();"></div>
+      <div class="search">${ICONS.search}<input id="nfc-busca-input" placeholder="Buscar por NF, fornecedor, CNPJ, chave, item, marca, código, NCM ou valor..." value="${esc(state.notasCompraBusca)}" oninput="state.notasCompraBusca=this.value; render();"></div>
       <select class="filter" onchange="state.notasCompraMes=this.value; render();">
         <option value="todos">Todos os meses</option>
         ${meses.map(m=>`<option value="${m}" ${state.notasCompraMes===m?'selected':''}>${mesLabel(Number(m.slice(5,7)))}/${m.slice(0,4)}</option>`).join('')}
@@ -4497,7 +4543,7 @@ function renderNotasCompra(){
     <div class="card" ${dropAttrs}>
       ${state.notasCompra.length===0 ? vazio : itensRows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou os filtros.</p></div>` : `
       <div class="table-wrap"><table>
-        <thead><tr><th style="width:28px">${podeSel?`<input type="checkbox" title="Selecionar todos os ${itensRows.length} resultados" ${todasSel?'checked':''} onchange="nfcSelecionarVarios(${esc(JSON.stringify(chavesTodas))}, this.checked)">`:''}</th><th>Emissão</th><th>Fornecedor</th><th>NF</th><th>Código</th><th>Descrição</th><th>NCM</th><th>Un.</th><th class="thc">Qtd.</th><th class="thc">Vl. unit.</th><th class="thc">IPI</th><th class="thc">Custo unit. c/ impostos</th><th class="thc">Total do item</th><th>Custo/Mínimo</th></tr></thead>
+        <thead><tr><th style="width:28px">${podeSel?`<input type="checkbox" title="Selecionar todos os ${itensRows.length} resultados" ${todasSel?'checked':''} onchange="nfcSelecionarVarios(${esc(JSON.stringify(chavesTodas))}, this.checked)">`:''}</th><th>Emissão</th><th>Fornecedor</th><th>NF</th><th>Código</th><th>Descrição</th><th>Marca</th><th>NCM</th><th>Un.</th><th class="thc">Qtd.</th><th class="thc">Vl. unit.</th><th class="thc">IPI</th><th class="thc">Custo unit. c/ impostos</th><th class="thc">Total do item</th><th>Custo/Mínimo</th></tr></thead>
         <tbody>
           ${mostrar.map(({nota:n,item:it})=>`
             <tr onclick="setView('notacompra-detail',{notaCompraId:'${n.id}'})">
@@ -4507,6 +4553,7 @@ function renderNotasCompra(){
               <td class="mono">${esc(n.numero)}</td>
               <td class="mono truncate" style="max-width:110px">${esc(it.codigo)||'—'}</td>
               <td>${esc(it.descricao)}</td>
+              <td onclick="event.stopPropagation()">${nfcCelulaMarca(n, it)}</td>
               <td class="mono">${esc(it.ncm)||'—'}</td>
               <td>${esc(it.unidade)||'—'}</td>
               <td class="numc">${nfcQtd(it.quantidade)}</td>
@@ -4603,7 +4650,7 @@ function renderNotaCompraDetail(){
     ${nfcBarraSelecao()}
     <div class="card">
       <div class="table-wrap"><table>
-        <thead><tr><th style="width:28px">${podeAcao('notasCompra','editar')?`<input type="checkbox" title="Selecionar todos os itens da nota" ${itens.length&&itens.every(it=>state.nfcSelecao.has(nfcChaveVinculo(n,it)))?'checked':''} onchange="nfcSelecionarVarios(${esc(JSON.stringify(itens.map(it=>nfcChaveVinculo(n,it))))}, this.checked)">`:''}</th><th>#</th><th>Código</th><th>Descrição</th><th>NCM</th><th>CFOP</th><th>Un.</th><th class="thc">Qtd.</th><th class="thc">Vl. unit.</th><th class="thc">Produto</th><th class="thc">Desc.</th><th class="thc">Frete</th><th class="thc">IPI</th><th class="thc">ICMS-ST</th><th class="thc">Custo total</th><th class="thc">Custo unit.</th><th>Custo/Mínimo</th></tr></thead>
+        <thead><tr><th style="width:28px">${podeAcao('notasCompra','editar')?`<input type="checkbox" title="Selecionar todos os itens da nota" ${itens.length&&itens.every(it=>state.nfcSelecao.has(nfcChaveVinculo(n,it)))?'checked':''} onchange="nfcSelecionarVarios(${esc(JSON.stringify(itens.map(it=>nfcChaveVinculo(n,it))))}, this.checked)">`:''}</th><th>#</th><th>Código</th><th>Descrição</th><th>Marca</th><th>NCM</th><th>CFOP</th><th>Un.</th><th class="thc">Qtd.</th><th class="thc">Vl. unit.</th><th class="thc">Produto</th><th class="thc">Desc.</th><th class="thc">Frete</th><th class="thc">IPI</th><th class="thc">ICMS-ST</th><th class="thc">Custo total</th><th class="thc">Custo unit.</th><th>Custo/Mínimo</th></tr></thead>
         <tbody>
           ${itens.map(it=>`
             <tr>
@@ -4611,6 +4658,7 @@ function renderNotaCompraDetail(){
               <td>${it.numero}</td>
               <td class="mono">${esc(it.codigo)||'—'}</td>
               <td>${esc(it.descricao)}${it.infAdicional?`<div style="font-size:.72rem;color:var(--ink-faint)">${esc(it.infAdicional)}</div>`:''}</td>
+              <td>${nfcCelulaMarca(n, it)}</td>
               <td class="mono">${esc(it.ncm)||'—'}</td>
               <td class="mono">${esc(it.cfop)||'—'}</td>
               <td>${esc(it.unidade)||'—'}</td>
