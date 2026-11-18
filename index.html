@@ -368,9 +368,9 @@ const STATUS_FATURA = ["Emitida","Paga Parcial","Paga","Cancelada"];
 const STATUS_FATURA_LABEL = {"Emitida":"Emitida","Paga Parcial":"Paga Parcial","Paga":"Paga","Cancelada":"Cancelada"};
 const STATUS_FATURA_LEVEL = {"Emitida":"neutral","Paga Parcial":"warn","Paga":"ok","Cancelada":"crit"};
 
-const MODULOS_PERMISSAO = ["empresas","lembretes","atas","pedidos","controlePedidos","controleManual","pedidosCompra","faturamento","financeiro","lucro","orgaos","custosMinimos","notasCompra","transportadoras","cotacoesFrete","usuarios"];
+const MODULOS_PERMISSAO = ["empresas","lembretes","atas","pedidos","controlePedidos","controleManual","relatorioNF","pedidosCompra","faturamento","financeiro","lucro","orgaos","custosMinimos","notasCompra","transportadoras","cotacoesFrete","usuarios"];
 const MODULOS_PERMISSAO_LABEL = {
-  empresas:"Minhas Empresas", lembretes:"Lembretes", atas:"Atas e Contratos", pedidos:"Pedidos", controlePedidos:"Controle de Pedidos", controleManual:"Controle de Pedidos Manual",
+  empresas:"Minhas Empresas", lembretes:"Lembretes", atas:"Atas e Contratos", pedidos:"Pedidos", controlePedidos:"Controle de Pedidos", controleManual:"Pedidos de Compra Manual", relatorioNF:"Relatório de Notas Fiscais",
   pedidosCompra:"Pedidos de Compra", faturamento:"Faturamento", financeiro:"Financeiro", lucro:"Lucro",
   orgaos:"Órgãos Públicos", custosMinimos:"Custo/Mínimo", notasCompra:"Notas de Compra (XML)", transportadoras:"Transportadoras", cotacoesFrete:"Cotação de Frete", usuarios:"Usuários",
 };
@@ -382,6 +382,7 @@ const MODULO_ACOES = {
   pedidos: ["criar","editar","excluir","separar","entregar","gerarPedidoCompra","faturar","cancelar"],
   controlePedidos: ["criar","editar","excluir"],
   controleManual: ["criar","editar","excluir"],
+  relatorioNF: ["criar","editar","excluir"],
   pedidosCompra: ["criar","editar","excluir","receber"],
   faturamento: ["criar","editar","excluir","pagar"],
   financeiro: ["criar","editar","excluir"],
@@ -402,12 +403,13 @@ const ACAO_LABEL = {
 const state = {
   db: null, dbReady:false, dbUnavailable:false,
   view:'painel',
-  atas:[], orgaos:[], pedidos:[], empresas:[], pedidosCompra:[], faturas:[], despesas:[], custosMinimos:[], usuarios:[], lembretes:[], financeiro:[], transportadoras:[], cotacoesFrete:[], controlePedidos:[], controleManual:[], notasCompra:[],
+  atas:[], orgaos:[], pedidos:[], empresas:[], pedidosCompra:[], faturas:[], despesas:[], custosMinimos:[], usuarios:[], lembretes:[], financeiro:[], transportadoras:[], cotacoesFrete:[], controlePedidos:[], controleManual:[], relatorioNF:[], relatorioNFPgtos:[], relatorioNFConfig:{}, notasCompra:[],
   notasCompraAba:'notas', notasCompraBusca:'', notasCompraMes:'todos', notasCompraFornecedor:'todos', notasCompraEmpresa:'todas', currentNotaCompraId:null,
   vinculosCusto:[], notasCompraVinculo:'todos', nfcSelecao:new Set(),
   controleSearch:'', controleEmpresaFilter:'todas', controleMunicipioFilter:'todos', controleMesFilter:'todos', controleSituacaoFilter:'todas', controleOrigemFilter:'todas',
   controleSort:{campo:'data', dir:'desc'}, controlePagina:0, controleNfMulti:null, controleNfMultiChave:'',
   cmanSearch:'', cmanClienteFilter:'todos', cmanMarcaFilter:'todas', cmanMesFilter:'todos', cmanSeparadoFilter:'todos', cmanPedidoFilter:'todos', cmanSort:{campo:'data', dir:'desc'}, cmanPagina:0, cmanSelecao:new Set(),
+  rnfAba:'nfs', rnfSearch:'', rnfMesFilter:'todos', rnfEmpresaFilter:'todas', rnfSitFilter:'todas', rnfMunicipioFilter:'todos', rnfSort:{campo:'emissao', dir:'desc'}, rnfPagina:0, rnfSelecao:new Set(), rnfSoPendencia:false,
   currentCotacaoFreteId:null, cotacaoFreteSearch:'', cotacaoFreteEntregueFilter:'todas',
   custoMinimoSearch:'',
   orgaoSearch:'',
@@ -620,7 +622,7 @@ function permissoesModulo(modulo){
   if(!u) return permissoesTotaisModulo(modulo);
   if(!u.permissoes && u.nivelAcesso==='Administrador') return permissoesTotaisModulo(modulo);
   // Módulo criado depois do cadastro do usuário (chave ausente): quem administra usuários recebe acesso total.
-  if(u.permissoes && u.permissoes[modulo]===undefined && (modulo==='notasCompra'||modulo==='controleManual') && u.permissoes.usuarios && u.permissoes.usuarios.ver) return permissoesTotaisModulo(modulo);
+  if(u.permissoes && u.permissoes[modulo]===undefined && (modulo==='notasCompra'||modulo==='controleManual'||modulo==='relatorioNF') && u.permissoes.usuarios && u.permissoes.usuarios.ver) return permissoesTotaisModulo(modulo);
   const p = (u.permissoes && u.permissoes[modulo]) || {};
   return p;
 }
@@ -669,6 +671,7 @@ function iniciarModulosPosLogin(){
   subscribeCotacoesFrete();
   subscribeControlePedidos();
   subscribeControleManual();
+  subscribeRelatorioNF();
   subscribeNotasCompra();
   subscribeVinculosCusto();
 }
@@ -711,7 +714,7 @@ async function criarPrimeiroAdmin(){
 function fazerLogout(){
   localStorage.removeItem('semfalta_sessao');
   [state.unsubAtas, state.unsubOrgaos, state.unsubPedidos, state.unsubEmpresas, state.unsubPedidosCompra, state.unsubFaturas, state.unsubDespesas, state.unsubCustosMinimos, state.unsubLembretes, state.unsubFinanceiro, state.unsubControlePedidos, state.unsubControleManual, state.unsubNotasCompra, state.unsubVinculosCusto].forEach(u=>{ if(u) u(); });
-  state.controleManual=[]; state.cmanSelecao=new Set(); state.notasCompra=[]; state.vinculosCusto=[]; state.nfcSelecao=new Set();
+  state.controleManual=[]; state.cmanSelecao=new Set(); state.relatorioNF=[]; state.relatorioNFPgtos=[]; state.relatorioNFConfig={}; state.rnfSelecao=new Set(); (state.unsubRelatorioNF||[]).forEach(u=>{ if(u) u(); }); state.unsubRelatorioNF=[]; state.notasCompra=[]; state.vinculosCusto=[]; state.nfcSelecao=new Set();
   state.atas=[]; state.orgaos=[]; state.pedidos=[]; state.empresas=[]; state.pedidosCompra=[]; state.faturas=[]; state.despesas=[]; state.custosMinimos=[]; state.lembretes=[]; state.financeiro=[]; state.controlePedidos=[];
   state.lembreteAlertaMostrado = false;
   state.autenticado = false;
@@ -730,6 +733,7 @@ const VIEW_MODULO = {
   pedidos:'pedidos', 'pedido-detail':'pedidos',
   controlepedidos:'controlePedidos',
   controlemanual:'controleManual',
+  relatorionf:'relatorioNF',
   pedidoscompra:'pedidosCompra', 'pedidocompra-detail':'pedidosCompra',
   faturamento:'faturamento', 'fatura-detail':'faturamento',
   financeiro:'financeiro', 'financeiro-mes':'financeiro',
@@ -877,7 +881,16 @@ function subscribeControleManual(){
   state.unsubControleManual = state.db.collection('controleManual').onSnapshot(snap=>{
     state.controleManual = snap.docs.map(d=>({id:d.id, ...d.data()}));
     render();
-  }, err=>{ console.error(err); toast('Falha ao carregar o controle manual.', 'crit'); });
+  }, err=>{ console.error(err); toast('Falha ao carregar os pedidos de compra manual.', 'crit'); });
+}
+function subscribeRelatorioNF(){
+  (state.unsubRelatorioNF||[]).forEach(u=>{ if(u) u(); });
+  const falha = ()=>err=>{ console.error(err); toast('Falha ao carregar o Relatório de Notas Fiscais.', 'crit'); };
+  state.unsubRelatorioNF = [
+    state.db.collection('relatorioNF').onSnapshot(snap=>{ state.relatorioNF = snap.docs.map(d=>({id:d.id, ...d.data()})); render(); }, falha()),
+    state.db.collection('relatorioNFPgtos').onSnapshot(snap=>{ state.relatorioNFPgtos = snap.docs.map(d=>({id:d.id, ...d.data()})); render(); }, falha()),
+    state.db.doc('relatorioNFConfig/geral').onSnapshot(doc=>{ state.relatorioNFConfig = doc.exists ? doc.data() : {}; render(); }, falha()),
+  ];
 }
 function subscribePedidosCompra(){
   if(state.unsubPedidosCompra) state.unsubPedidosCompra();
@@ -5285,12 +5298,13 @@ function renderSidebar(){
         <div class="nav-label">Lembretes</div>
         ${item('lembretes','Lembretes',ICONS.bell, lembretesPendentesAtencao().length)}
       </div>` : ''}
-      ${(podeVerModulo('atas')||podeVerModulo('pedidos')||podeVerModulo('controlePedidos')||podeVerModulo('controleManual')||podeVerModulo('pedidosCompra')||podeVerModulo('faturamento')||podeVerModulo('financeiro')||podeVerModulo('lucro')||podeVerModulo('orgaos')||podeVerModulo('custosMinimos')||podeVerModulo('notasCompra')) ? `<div class="nav-group">
+      ${(podeVerModulo('atas')||podeVerModulo('pedidos')||podeVerModulo('controlePedidos')||podeVerModulo('controleManual')||podeVerModulo('relatorioNF')||podeVerModulo('pedidosCompra')||podeVerModulo('faturamento')||podeVerModulo('financeiro')||podeVerModulo('lucro')||podeVerModulo('orgaos')||podeVerModulo('custosMinimos')||podeVerModulo('notasCompra')) ? `<div class="nav-group">
         <div class="nav-label">Registro</div>
         ${podeVerModulo('atas')?item('atas','Atas e Contratos',ICONS.doc, state.atas.length):''}
         ${podeVerModulo('pedidos')?item('pedidos','Pedidos',ICONS.cart, state.pedidos.length):''}
         ${podeVerModulo('controlePedidos')?item('controlepedidos','Controle de Pedidos',ICONS.check, controleContagem()):''}
-        ${podeVerModulo('controleManual')?item('controlemanual','Controle Manual',ICONS.edit, state.controleManual.length):''}
+        ${podeVerModulo('controleManual')?item('controlemanual','Pedidos de Compra Manual',ICONS.edit, state.controleManual.length):''}
+        ${podeVerModulo('relatorioNF')?item('relatorionf','Relatório de Notas Fiscais',ICONS.briefcase, state.relatorioNF.length):''}
         ${podeVerModulo('pedidosCompra')?item('pedidoscompra','Pedidos de Compra',ICONS.inbox, state.pedidosCompra.length):''}
         ${podeVerModulo('faturamento')?item('faturamento','Faturamento',ICONS.sheet, state.faturas.length):''}
         ${podeVerModulo('financeiro')?item('financeiro','Financeiro',ICONS.wallet, state.financeiro.length):''}
@@ -6206,7 +6220,7 @@ async function exportarControlePedidosXLSX(){
   }
 }
 
-// ===== Controle de Pedidos Manual =====
+// ===== Pedidos de Compra Manual =====
 // Controle item a item, no esquema da planilha "controle de pedidos manual": cada linha é um item de um pedido
 // (data, cliente, secretaria, ordem/empenho, item, obs, marca, qtd, v. unit., separado?, pedido, total = qtd × v. unit.).
 // Guardado na coleção `controleManual`; nada aqui vem automaticamente de outros módulos.
@@ -6272,7 +6286,7 @@ async function createControleManual(data){
   if(!exigirPermissaoAcao('controleManual','criar')) return null;
   return await dbCall(state.db.collection('controleManual').add({
     ...data, criadoPor: state.nome||'—', criadoEm: new Date().toISOString(),
-  }), 'Linha adicionada ao controle manual.');
+  }), 'Linha adicionada aos pedidos de compra manual.');
 }
 async function updateControleManual(id, data){
   if(!exigirPermissaoAcao('controleManual','editar')) return;
@@ -6282,7 +6296,7 @@ async function updateControleManual(id, data){
 }
 async function deleteControleManual(id){
   if(!exigirPermissaoAcao('controleManual','excluir')) return false;
-  const ok = await confirmDialog('Excluir esta linha do controle manual?');
+  const ok = await confirmDialog('Excluir esta linha dos pedidos de compra manual?');
   if(!ok) return false;
   await dbCall(state.db.doc('controleManual/'+id).delete(), 'Linha excluída.');
   state.cmanSelecao.delete(id);
@@ -6312,7 +6326,7 @@ async function cmanAplicarSelecao(acao){
   const permissao = acao==='excluir' ? 'excluir' : 'editar';
   if(!exigirPermissaoAcao('controleManual', permissao)) return;
   if(acao==='excluir'){
-    const ok = await confirmDialog('Excluir '+ids.length+' linha(s) selecionada(s) do controle manual? Esta ação não pode ser desfeita.');
+    const ok = await confirmDialog('Excluir '+ids.length+' linha(s) selecionada(s) dos pedidos de compra manual? Esta ação não pode ser desfeita.');
     if(!ok) return;
   }
   const campos = {marcarSeparado:{separado:true}, limparSeparado:{separado:false}, marcarPedido:{pedido:true}, limparPedido:{pedido:false}};
@@ -6360,7 +6374,7 @@ function renderControleManual(){
 
   return `
     <div class="topbar">
-      <div><h1>Controle de Pedidos Manual</h1><div class="sub">${todas.length} linha(s) · controle item a item, lançado à mão</div></div>
+      <div><h1>Pedidos de Compra Manual</h1><div class="sub">${todas.length} linha(s) · controle item a item, lançado à mão</div></div>
       <div class="actions">
         <button class="btn btn-ghost" onclick="copyControleManualExcel()">${ICONS.sheet}Copiar para Excel</button>
         <button class="btn btn-ghost" onclick="exportarControleManualXLSX()">${ICONS.sheet}Baixar planilha</button>
@@ -6411,7 +6425,7 @@ function renderControleManual(){
     </div>` : ''}
     <div class="card">
       ${todas.length===0 ? `
-      <div class="empty"><h3>Nenhuma linha no controle manual ainda</h3><p>Adicione os itens dos pedidos, um por linha, como na planilha.</p>
+      <div class="empty"><h3>Nenhuma linha nos pedidos de compra manual ainda</h3><p>Adicione os itens dos pedidos, um por linha, como na planilha.</p>
         ${podeCriar?`<button class="btn btn-primary" onclick="openControleManualForm()">${ICONS.plus}Nova linha</button>`:''}</div>
       ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou os filtros.</p></div>` : `
       <div class="table-wrap"><table class="controle-tab">
@@ -6566,11 +6580,745 @@ async function exportarControleManualXLSX(){
   }
   ws['!autofilter'] = {ref: 'A1:L'+aoa.length};
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Controle manual');
+  XLSX.utils.book_append_sheet(wb, ws, 'Pedidos de compra manual');
   const bin = XLSX.write(wb, {type:'array', bookType:'xlsx'});
   try{
-    await criarDownloadsLocal().save({filename:'controle-de-pedidos-manual.xlsx', data:new Blob([bin], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})});
+    await criarDownloadsLocal().save({filename:'pedidos-de-compra-manual.xlsx', data:new Blob([bin], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})});
     toast('Planilha gerada com '+(aoa.length-1)+' linha(s) (respeita os filtros atuais).');
+  }catch(e){
+    if(e && e.code==='declined'){ /* usuário cancelou o download */ }
+    else toast('Não foi possível gerar a planilha.', 'crit');
+  }
+}
+
+// ===== Relatório de Notas Fiscais =====
+// Reproduz a planilha "Relatório de Notas Fiscais" (abas: NFs 2026, Pagamentos Atrasados, Resumo Mensal, Pgtos Não Identificados).
+// Módulo independente: guardado nas coleções `relatorioNF` (NFs), `relatorioNFPgtos` (pagamentos não identificados) e
+// `relatorioNFConfig/geral` (prazo de pagamento). Nada aqui vem automaticamente de outros módulos.
+const RNF_POR_PAGINA = 100;
+const RNF_MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const RNF_EMPRESAS = ['Porto Atacadista','Pegasus Atacadista'];
+const RNF_ABAS = [['nfs','NFs'],['atrasados','Pagamentos Atrasados'],['resumo','Resumo Mensal'],['pgtos','Pgtos Não Identificados']];
+function rnfNorm(s){ return String(s===null||s===undefined?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().replace(/\s+/g,' ').trim(); }
+function rnfArred(n){ return Math.round((Number(n)||0)*100)/100; }
+function rnfHoje(){ const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function rnfDiasEntre(a, b){
+  const [y1,m1,d1] = a.split('-').map(Number), [y2,m2,d2] = b.split('-').map(Number);
+  return Math.round((Date.UTC(y2,m2-1,d2)-Date.UTC(y1,m1-1,d1))/86400000);
+}
+function rnfPrazo(){
+  const c = state.relatorioNFConfig || {};
+  const p = Number(c.prazoDias);
+  return (c.prazoDias!==undefined && c.prazoDias!==null && c.prazoDias!=='' && Number.isFinite(p) && p>=0) ? p : 30;
+}
+function rnfMesDaData(iso){ const m = Number((iso||'').slice(5,7)); return (m>=1 && m<=12) ? RNF_MESES[m-1] : ''; }
+
+// Mesma regra da coluna "Situação" da planilha.
+function rnfSituacaoDe(n, prazo, hoje){
+  if(!n.emissao || n.valor===null || n.valor===undefined || n.valor==='') return '';
+  const t = rnfNorm(n.tipo);
+  if(['DEVOL','BONIFIC','AMOSTRA','TROCA'].some(k=>t.includes(k))) return 'Devolução/Bonif.';
+  const temData = !!n.dataPagamento, temObs = !!String(n.pagamentoObs||'').trim();
+  if(!temData && rnfNorm(n.pagamentoObs)==='EM VERIFICACAO') return addDaysISO(n.emissao, prazo) < hoje ? 'EM ABERTO' : 'A vencer';
+  if(temData || temObs) return 'Pago';
+  return 'EM ABERTO';
+}
+
+function rnfLinhas(){
+  const prazo = rnfPrazo(), hoje = rnfHoje();
+  return state.relatorioNF.map(n=>{
+    const l = {...n, numeroNF:String(n.numeroNF===undefined||n.numeroNF===null?'':n.numeroNF)};
+    l.valor = Number(n.valor)||0;
+    l.situacao = rnfSituacaoDe(n, prazo, hoje);
+    l.vencimento = n.emissao ? addDaysISO(n.emissao, prazo) : '';
+    l.diasAtraso = l.situacao==='EM ABERTO' && l.vencimento ? Math.max(0, rnfDiasEntre(l.vencimento, hoje)) : null;
+    l.pagamentoTxt = n.dataPagamento ? fmtDate(n.dataPagamento) : String(n.pagamentoObs||'');
+    l.nfOrd = /^\d+$/.test(l.numeroNF) ? Number(l.numeroNF) : 0;
+    l.mesIdx = RNF_MESES.indexOf(n.mes);
+    l.municipioKey = rnfNorm(n.municipio);
+    l.busca = rnfNorm([l.numeroNF,n.cliente,n.municipio,n.tipo,n.observacao,n.pagamentoObs,n.empresa,n.cnpj,n.secretaria,n.ordemEmpenho,l.valor.toFixed(2)].join(' '));
+    return l;
+  });
+}
+function rnfCmpOrdem(a, b){ return ((a.ordemPlanilha||0)-(b.ordemPlanilha||0)) || String(a.criadoEm||'').localeCompare(String(b.criadoEm||'')); }
+
+function rnfFiltradas(todas){
+  let rows = todas;
+  if(state.rnfMesFilter!=='todos') rows = rows.filter(l=>l.mes===state.rnfMesFilter);
+  if(state.rnfEmpresaFilter!=='todas') rows = rows.filter(l=>(l.empresa||'')===state.rnfEmpresaFilter);
+  if(state.rnfSitFilter!=='todas') rows = rows.filter(l=>l.situacao===state.rnfSitFilter);
+  if(state.rnfMunicipioFilter!=='todos') rows = rows.filter(l=>l.municipioKey===state.rnfMunicipioFilter);
+  if(state.rnfSearch.trim()){
+    const q = rnfNorm(state.rnfSearch);
+    rows = rows.filter(l=>l.busca.includes(q));
+  }
+  const {campo, dir} = state.rnfSort;
+  const sinal = dir==='asc' ? 1 : -1;
+  const chave = l=>{
+    switch(campo){
+      case 'mes': return l.mesIdx;
+      case 'numeroNF': return l.nfOrd || rnfNorm(l.numeroNF);
+      case 'valor': return l.valor;
+      case 'diasAtraso': return l.diasAtraso===null ? -1 : l.diasAtraso;
+      case 'emissao': case 'vencimento': return l[campo]||'';
+      case 'pagamentoTxt': return l.dataPagamento||rnfNorm(l.pagamentoObs);
+      default: return rnfNorm(l[campo]);
+    }
+  };
+  return [...rows].sort((a,b)=>{
+    const x = chave(a), y = chave(b);
+    const c = (typeof x==='number' && typeof y==='number') ? x-y : (String(x)<String(y) ? -1 : String(x)>String(y) ? 1 : 0);
+    if(c!==0) return c*sinal;
+    return rnfCmpOrdem(a,b);
+  });
+}
+function rnfOrdenar(campo){
+  const s = state.rnfSort;
+  state.rnfSort = s.campo===campo ? {campo, dir: s.dir==='asc' ? 'desc' : 'asc'} : {campo, dir: ['emissao','valor','vencimento','diasAtraso'].includes(campo) ? 'desc' : 'asc'};
+  state.rnfPagina = 0;
+  render();
+}
+function rnfSetFiltro(chave, valor){ state[chave] = valor; state.rnfPagina = 0; render(); }
+function rnfMudarPagina(delta){ state.rnfPagina = Math.max(0, state.rnfPagina+delta); render(); }
+function rnfSetAba(a){ state.rnfAba = a; render(); }
+function rnfThSort(campo, label, classe){
+  const s = state.rnfSort;
+  const seta = s.campo===campo ? (s.dir==='asc' ? ' ▲' : ' ▼') : '';
+  return `<th class="sortable ${classe||''}" onclick="rnfOrdenar('${campo}')">${label}${seta}</th>`;
+}
+function rnfPillSituacao(l){
+  const s = l.situacao;
+  if(s==='Pago') return '<span class="pill ok">Pago</span>';
+  if(s==='EM ABERTO') return `<span class="pill ${l.diasAtraso>0?'crit':'warn'}">EM ABERTO</span>`;
+  if(s==='A vencer') return '<span class="pill warn">A vencer</span>';
+  if(s==='Devolução/Bonif.') return '<span class="pill neutral">Devolução/Bonif.</span>';
+  return '—';
+}
+
+// ---------- gravação ----------
+async function createRelatorioNF(data){
+  if(!exigirPermissaoAcao('relatorioNF','criar')) return null;
+  return await dbCall(state.db.collection('relatorioNF').add({
+    ...data, criadoPor: state.nome||'—', criadoEm: new Date().toISOString(),
+  }), 'NF adicionada ao relatório.');
+}
+async function updateRelatorioNF(id, data){
+  if(!exigirPermissaoAcao('relatorioNF','editar')) return;
+  await dbCall(state.db.doc('relatorioNF/'+id).update({
+    ...data, atualizadoPor: state.nome||'—', atualizadoEm: new Date().toISOString(),
+  }), 'NF atualizada.');
+}
+async function deleteRelatorioNF(id){
+  if(!exigirPermissaoAcao('relatorioNF','excluir')) return false;
+  const ok = await confirmDialog('Excluir esta NF do relatório?');
+  if(!ok) return false;
+  await dbCall(state.db.doc('relatorioNF/'+id).delete(), 'NF excluída.');
+  state.rnfSelecao.delete(id);
+  return true;
+}
+async function rnfSalvarPrazo(valor){
+  if(!exigirPermissaoAcao('relatorioNF','editar')){ render(); return; }
+  const v = Number(valor);
+  if(!Number.isFinite(v) || v<0 || String(valor).trim()===''){ toast('Informe um prazo em dias (0 ou mais).', 'crit'); render(); return; }
+  await dbCall(state.db.doc('relatorioNFConfig/geral').set({prazoDias:Math.round(v), atualizadoPor: state.nome||'—', atualizadoEm: new Date().toISOString()}, {merge:true}), 'Prazo de pagamento atualizado.');
+}
+async function createRelatorioNFPgto(data){
+  if(!exigirPermissaoAcao('relatorioNF','criar')) return null;
+  return await dbCall(state.db.collection('relatorioNFPgtos').add({
+    ...data, criadoPor: state.nome||'—', criadoEm: new Date().toISOString(),
+  }), 'Pagamento adicionado.');
+}
+async function updateRelatorioNFPgto(id, data){
+  if(!exigirPermissaoAcao('relatorioNF','editar')) return;
+  await dbCall(state.db.doc('relatorioNFPgtos/'+id).update({
+    ...data, atualizadoPor: state.nome||'—', atualizadoEm: new Date().toISOString(),
+  }), 'Pagamento atualizado.');
+}
+async function deleteRelatorioNFPgto(id){
+  if(!exigirPermissaoAcao('relatorioNF','excluir')) return false;
+  const ok = await confirmDialog('Excluir este pagamento não identificado?');
+  if(!ok) return false;
+  await dbCall(state.db.doc('relatorioNFPgtos/'+id).delete(), 'Pagamento excluído.');
+  return true;
+}
+
+// ---------- seleção e ações em lote ----------
+function rnfToggleSel(id, marcado){ if(marcado) state.rnfSelecao.add(id); else state.rnfSelecao.delete(id); render(); }
+function rnfSelecionarVarios(ids, marcado){ ids.forEach(id=>{ if(marcado) state.rnfSelecao.add(id); else state.rnfSelecao.delete(id); }); render(); }
+function rnfLimparSel(){ state.rnfSelecao = new Set(); render(); }
+async function rnfExcluirSelecao(){
+  const ids = [...state.rnfSelecao].filter(id=>state.relatorioNF.some(n=>n.id===id));
+  if(!ids.length) return;
+  if(!exigirPermissaoAcao('relatorioNF','excluir')) return;
+  const ok = await confirmDialog('Excluir '+ids.length+' NF(s) selecionada(s) do relatório? Esta ação não pode ser desfeita.');
+  if(!ok) return;
+  try{
+    for(let i=0;i<ids.length;i+=400){
+      const batch = state.db.batch();
+      ids.slice(i,i+400).forEach(id=>batch.delete(state.db.doc('relatorioNF/'+id)));
+      await batch.commit();
+    }
+    toast(ids.length+' NF(s) excluída(s).');
+    state.rnfSelecao = new Set();
+    render();
+  }catch(e){ console.error(e); toast('Não foi possível excluir em lote.', 'crit'); }
+}
+// Dá baixa (informa a data de pagamento) em uma ou mais NFs.
+function rnfAbrirBaixa(ids){
+  if(!exigirPermissaoAcao('relatorioNF','editar')) return;
+  ids = (ids||[]).filter(id=>state.relatorioNF.some(n=>n.id===id));
+  if(!ids.length) return;
+  openPanel(`
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Dar baixa em ${ids.length} NF${ids.length>1?'s':''}</h2>
+        <button class="icon-btn" onclick="closePanel()">${ICONS.close}</button>
+      </div>
+      <form id="rnf-baixa-form" class="panel-body" onsubmit="return false">
+        <div class="field-grid">
+          <div class="field span2"><label>Data do pagamento</label><input name="dataPagamento" type="date" value="${rnfHoje()}" required></div>
+        </div>
+        <p style="font-size:.8rem;color:var(--ink-soft);margin:6px 0 0">A situação passa a "Pago". Se a NF estava "Em verificação", o aviso é limpo.</p>
+      </form>
+      <div class="panel-footer">
+        <button class="btn btn-ghost" onclick="closePanel()">Cancelar</button>
+        <button class="btn btn-primary" id="rnf-baixa-submit">Confirmar baixa</button>
+      </div>
+    </div>`);
+  document.getElementById('rnf-baixa-submit').onclick = async ()=>{
+    const form = document.getElementById('rnf-baixa-form');
+    if(!form.reportValidity()) return;
+    const btn = document.getElementById('rnf-baixa-submit');
+    if(btn.disabled) return;
+    btn.disabled = true;
+    const data = form.elements.dataPagamento.value;
+    try{
+      for(let i=0;i<ids.length;i+=400){
+        const batch = state.db.batch();
+        ids.slice(i,i+400).forEach(id=>{
+          const n = state.relatorioNF.find(x=>x.id===id) || {};
+          const upd = {dataPagamento:data, atualizadoPor: state.nome||'—', atualizadoEm: new Date().toISOString()};
+          if(rnfNorm(n.pagamentoObs)==='EM VERIFICACAO') upd.pagamentoObs = '';
+          batch.update(state.db.doc('relatorioNF/'+id), upd);
+        });
+        await batch.commit();
+      }
+      toast(ids.length+' NF(s) baixada(s).');
+      state.rnfSelecao = new Set();
+      closePanel();
+    }catch(e){ console.error(e); btn.disabled = false; toast('Não foi possível dar baixa.', 'crit'); }
+  };
+}
+
+// ---------- cálculos do resumo ----------
+function rnfSomar(o, l){
+  const s = l.situacao;
+  if(s==='Pago'){ o.qtdPagas++; o.valorPago += l.valor; }
+  else if(s==='EM ABERTO'){ o.qtdAberto++; o.valorAberto += l.valor; }
+  else if(s==='A vencer'){ o.aVencer += l.valor; }
+  else if(s==='Devolução/Bonif.'){ o.qtdDev++; o.valorDev += l.valor; }
+  if(s==='Pago' || s==='EM ABERTO' || s==='A vencer'){ o.qtdVendas++; o.valorVendas += l.valor; }
+}
+function rnfNovoAcum(){ return {qtdVendas:0, valorVendas:0, qtdPagas:0, valorPago:0, qtdAberto:0, valorAberto:0, qtdDev:0, valorDev:0, aVencer:0}; }
+function rnfTotaisPgtos(){ return rnfArred(state.relatorioNFPgtos.reduce((s,p)=>s+(Number(p.valor)||0),0)); }
+function rnfResumoCalc(todas){
+  const meses = RNF_MESES.map(m=>{ const o = rnfNovoAcum(); o.mes = m; todas.filter(l=>l.mes===m).forEach(l=>rnfSomar(o,l)); return o; });
+  const totalMeses = rnfNovoAcum(); totalMeses.mes = 'TOTAL';
+  meses.forEach(o=>Object.keys(totalMeses).forEach(k=>{ if(k!=='mes') totalMeses[k] += o[k]; }));
+  const empresas = [...RNF_EMPRESAS, 'Fora da faixa'].map(nome=>{
+    const o = rnfNovoAcum(); o.empresa = nome;
+    todas.filter(l=> nome==='Fora da faixa' ? !RNF_EMPRESAS.includes(l.empresa) : l.empresa===nome).forEach(l=>rnfSomar(o,l));
+    return o;
+  });
+  const totalEmp = rnfNovoAcum(); totalEmp.empresa = 'TOTAL';
+  empresas.forEach(o=>Object.keys(totalEmp).forEach(k=>{ if(k!=='empresa') totalEmp[k] += o[k]; }));
+  const munis = new Map();
+  const reg = (label)=>{ const k = rnfNorm(label); if(!k) return null; if(!munis.has(k)) munis.set(k, {municipio:String(label).trim(), qtdAberto:0, valorAberto:0, maisAntiga:'', pgtos:0}); return munis.get(k); };
+  todas.forEach(l=>{ const m = reg(l.municipio); if(m && l.situacao==='EM ABERTO'){ m.qtdAberto++; m.valorAberto += l.valor; if(l.emissao && (!m.maisAntiga || l.emissao<m.maisAntiga)) m.maisAntiga = l.emissao; } });
+  state.relatorioNFPgtos.forEach(p=>{ const m = reg(p.municipio); if(m) m.pgtos += Number(p.valor)||0; });
+  const municipios = [...munis.values()].sort((a,b)=>a.municipio.localeCompare(b.municipio,'pt-BR')).map(m=>({...m, saldo:m.valorAberto-m.pgtos}));
+  return {meses, totalMeses, empresas, totalEmp, municipios};
+}
+function rnfPctRecebido(o){ const base = o.valorVendas - o.aVencer; return base===0 ? 0 : o.valorPago/base; }
+
+// ---------- telas ----------
+function renderRelatorioNF(){
+  const todas = rnfLinhas();
+  const abas = `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">${RNF_ABAS.map(([k,l])=>`<button class="btn btn-sm ${state.rnfAba===k?'btn-primary':'btn-ghost'}" onclick="rnfSetAba('${k}')">${l}</button>`).join('')}</div>`;
+  const podeCriar = podeAcao('relatorioNF','criar');
+  const topbar = `
+    <div class="topbar">
+      <div><h1>Relatório de Notas Fiscais</h1><div class="sub">${todas.length} NF(s) · ${state.relatorioNFPgtos.length} pagamento(s) não identificado(s) · prazo de pagamento: ${rnfPrazo()} dia(s)</div></div>
+      <div class="actions">
+        <button class="btn btn-ghost" onclick="exportarRelatorioNFXLSX()">${ICONS.sheet}Baixar planilha</button>
+        ${podeCriar && state.rnfAba==='pgtos' ? `<button class="btn btn-primary" onclick="openRelatorioNFPgtoForm()">${ICONS.plus}Novo pagamento</button>` : ''}
+        ${podeCriar && state.rnfAba!=='pgtos' ? `<button class="btn btn-primary" onclick="openRelatorioNFForm()">${ICONS.plus}Nova NF</button>` : ''}
+      </div>
+    </div>`;
+  let corpo = '';
+  if(state.rnfAba==='atrasados') corpo = rnfRenderAtrasados(todas);
+  else if(state.rnfAba==='resumo') corpo = rnfRenderResumo(todas);
+  else if(state.rnfAba==='pgtos') corpo = rnfRenderPgtos();
+  else corpo = rnfRenderNFs(todas);
+  return topbar + abas + corpo;
+}
+
+function rnfAcoesLinha(l, comBaixa){
+  const podeEditar = podeAcao('relatorioNF','editar'), podeExcluir = podeAcao('relatorioNF','excluir'), podeCriar = podeAcao('relatorioNF','criar');
+  return `<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px">
+    ${comBaixa && podeEditar && l.situacao!=='Pago' && l.situacao!=='Devolução/Bonif.' ? `<button class="btn btn-ghost btn-sm" title="Informar a data de pagamento" onclick="rnfAbrirBaixa(['${l.id}'])">Dar baixa</button>`:''}
+    ${podeCriar?`<button class="icon-btn" title="Duplicar NF" onclick="openRelatorioNFForm(null,null,'${l.id}')">${ICONS.plus}</button>`:''}
+    ${podeEditar?`<button class="icon-btn" title="Editar" onclick="openRelatorioNFForm('${l.id}')">${ICONS.edit}</button>`:''}
+    ${podeExcluir?`<button class="icon-btn" title="Excluir" onclick="deleteRelatorioNF('${l.id}')">${ICONS.trash}</button>`:''}
+  </div>`;
+}
+
+function rnfRenderNFs(todas){
+  const rows = rnfFiltradas(todas);
+  const totalPaginas = Math.max(1, Math.ceil(rows.length/RNF_POR_PAGINA));
+  if(state.rnfPagina>=totalPaginas) state.rnfPagina = totalPaginas-1;
+  const ini = state.rnfPagina*RNF_POR_PAGINA;
+  const pagina = rows.slice(ini, ini+RNF_POR_PAGINA);
+  const soma = (f)=>rnfArred(rows.filter(f).reduce((s,l)=>s+l.valor,0));
+  const emAberto = rows.filter(l=>l.situacao==='EM ABERTO');
+  const munis = new Map(); todas.forEach(l=>{ if(l.municipioKey && !munis.has(l.municipioKey)) munis.set(l.municipioKey, String(l.municipio).trim()); });
+  const munisOrd = [...munis.entries()].sort((a,b)=>a[0].localeCompare(b[0],'pt-BR'));
+  const sel = (atual, v)=> atual===v ? 'selected' : '';
+  const podeEditar = podeAcao('relatorioNF','editar'), podeExcluir = podeAcao('relatorioNF','excluir');
+  const idsPagina = pagina.map(l=>l.id);
+  const todasMarcadas = idsPagina.length>0 && idsPagina.every(id=>state.rnfSelecao.has(id));
+  const idsSel = [...state.rnfSelecao].filter(id=>todas.some(l=>l.id===id));
+  return `
+    <div class="kpi-row" style="margin-bottom:16px">
+      <div class="kpi"><div class="label">NFs na lista</div><div class="value">${rows.length}</div></div>
+      <div class="kpi"><div class="label">Valor na lista</div><div class="value">${fmtBRL(soma(()=>true))}</div></div>
+      <div class="kpi"><div class="label">Pago</div><div class="value ok">${fmtBRL(soma(l=>l.situacao==='Pago'))}</div></div>
+      <div class="kpi"><div class="label">Em aberto (${emAberto.length})</div><div class="value ${emAberto.length?'warn':''}">${fmtBRL(rnfArred(emAberto.reduce((s,l)=>s+l.valor,0)))}</div></div>
+    </div>
+    <div class="toolbar">
+      <div class="search">${ICONS.search}<input id="rnf-search-input" placeholder="Buscar por nº da NF, cliente, município, empresa, CNPJ, secretaria, ordem/empenho..." value="${esc(state.rnfSearch)}" oninput="rnfSetFiltro('rnfSearch', this.value)"></div>
+      <select class="filter" onchange="rnfSetFiltro('rnfMesFilter', this.value)">
+        <option value="todos">Todos os meses</option>
+        ${RNF_MESES.map(m=>`<option value="${m}" ${sel(state.rnfMesFilter,m)}>${m}</option>`).join('')}
+      </select>
+      <select class="filter" onchange="rnfSetFiltro('rnfEmpresaFilter', this.value)">
+        <option value="todas">Todas as empresas</option>
+        ${RNF_EMPRESAS.map(m=>`<option value="${m}" ${sel(state.rnfEmpresaFilter,m)}>${m}</option>`).join('')}
+      </select>
+      <select class="filter" onchange="rnfSetFiltro('rnfSitFilter', this.value)">
+        <option value="todas">Todas as situações</option>
+        ${['Pago','EM ABERTO','A vencer','Devolução/Bonif.'].map(m=>`<option value="${m}" ${sel(state.rnfSitFilter,m)}>${m}</option>`).join('')}
+      </select>
+      <select class="filter" onchange="rnfSetFiltro('rnfMunicipioFilter', this.value)">
+        <option value="todos">Todos os municípios</option>
+        ${munisOrd.map(([k,label])=>`<option value="${esc(k)}" ${sel(state.rnfMunicipioFilter,k)}>${esc(label)}</option>`).join('')}
+      </select>
+    </div>
+    ${idsSel.length>0 ? `
+    <div class="card" style="margin-bottom:12px;padding:10px 14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <strong style="font-size:.88rem">${idsSel.length} NF(s) selecionada(s)</strong>
+      ${podeEditar?`<button class="btn btn-ghost btn-sm" onclick="rnfAbrirBaixa(${esc(JSON.stringify(idsSel))})">Dar baixa</button>`:''}
+      ${podeExcluir?`<button class="btn btn-ghost btn-sm" style="color:var(--crit)" onclick="rnfExcluirSelecao()">Excluir</button>`:''}
+      <button class="btn btn-ghost btn-sm" onclick="rnfLimparSel()">Limpar seleção</button>
+    </div>` : ''}
+    <div class="card">
+      ${todas.length===0 ? `
+      <div class="empty"><h3>Nenhuma NF no relatório ainda</h3><p>Adicione as notas fiscais emitidas, uma por linha, como na planilha.</p>
+        ${podeAcao('relatorioNF','criar')?`<button class="btn btn-primary" onclick="openRelatorioNFForm()">${ICONS.plus}Nova NF</button>`:''}</div>
+      ` : rows.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca ou os filtros.</p></div>` : `
+      <div class="table-wrap"><table class="controle-tab">
+        <thead><tr>
+          <th style="width:28px"><input type="checkbox" ${todasMarcadas?'checked':''} onchange="rnfSelecionarVarios(${esc(JSON.stringify(idsPagina))}, this.checked)" title="Selecionar todas desta página"></th>
+          ${rnfThSort('mes','Mês')}${rnfThSort('numeroNF','Nº NF')}${rnfThSort('cliente','Cliente')}${rnfThSort('municipio','Município')}${rnfThSort('tipo','Tipo (CFOP)')}
+          ${rnfThSort('emissao','Emissão')}${rnfThSort('valor','Valor (R$)','num')}${rnfThSort('pagamentoTxt','Data Pagamento')}${rnfThSort('situacao','Situação')}
+          ${rnfThSort('vencimento','Vencimento (est.)')}${rnfThSort('diasAtraso','Dias em atraso','num')}${rnfThSort('empresa','Empresa')}${rnfThSort('cnpj','CNPJ')}
+          ${rnfThSort('secretaria','Secretaria')}${rnfThSort('ordemEmpenho','Ordem/Empenho')}<th>Observação</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${pagina.map(l=>`
+            <tr>
+              <td><input type="checkbox" ${state.rnfSelecao.has(l.id)?'checked':''} onchange="rnfToggleSel('${l.id}', this.checked)"></td>
+              <td>${esc(l.mes)||'—'}</td>
+              <td class="mono">${esc(l.numeroNF)}</td>
+              <td class="sec" style="max-width:220px" title="${esc(l.cliente)}">${esc(l.cliente)||'—'}</td>
+              <td class="sec" title="${esc(l.municipio)}">${esc(l.municipio)||'—'}</td>
+              <td class="sec" title="${esc(l.tipo)}">${esc(l.tipo)||'—'}</td>
+              <td>${l.emissao?fmtDate(l.emissao):'—'}</td>
+              <td class="num" style="font-weight:600">${fmtBRL(l.valor)}</td>
+              <td>${esc(l.pagamentoTxt)||''}</td>
+              <td>${rnfPillSituacao(l)}</td>
+              <td>${l.vencimento?fmtDate(l.vencimento):'—'}</td>
+              <td class="num">${l.diasAtraso===null?'':l.diasAtraso}</td>
+              <td>${esc(l.empresa)||'—'}</td>
+              <td class="mono">${esc(l.cnpj)||''}</td>
+              <td class="sec" title="${esc(l.secretaria)}">${esc(l.secretaria)||''}</td>
+              <td class="mono">${esc(l.ordemEmpenho)||''}</td>
+              <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis" title="${esc(l.observacao)}">${esc(l.observacao)||''}</td>
+              <td>${rnfAcoesLinha(l, true)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table></div>
+      <div class="controle-pag">
+        <span>Mostrando ${ini+1}–${Math.min(ini+RNF_POR_PAGINA, rows.length)} de ${rows.length}</span>
+        <span style="display:flex;align-items:center;gap:8px">
+          <button class="btn btn-ghost btn-sm" onclick="rnfMudarPagina(-1)" ${state.rnfPagina===0?'disabled':''}>${ICONS.chevronLeft}Anterior</button>
+          <span>Página ${state.rnfPagina+1} de ${totalPaginas}</span>
+          <button class="btn btn-ghost btn-sm" onclick="rnfMudarPagina(1)" ${state.rnfPagina>=totalPaginas-1?'disabled':''}>Próxima${ICONS.chevronRight}</button>
+        </span>
+      </div>`}
+    </div>`;
+}
+
+// Aba "Pagamentos Atrasados": toda NF "EM ABERTO" (sem data de pagamento), com vencimento = emissão + prazo.
+function rnfAtrasadosLista(todas){
+  return todas.filter(l=>l.situacao==='EM ABERTO').sort((a,b)=>(a.emissao||'').localeCompare(b.emissao||'') || (a.nfOrd-b.nfOrd) || rnfCmpOrdem(a,b));
+}
+function rnfRenderAtrasados(todas){
+  const prazo = rnfPrazo(), hoje = rnfHoje();
+  const abertas = rnfAtrasadosLista(todas);
+  let lista = abertas;
+  if(state.rnfSearch.trim()){ const q = rnfNorm(state.rnfSearch); lista = lista.filter(l=>l.busca.includes(q)); }
+  const vencidas = abertas.filter(l=>l.diasAtraso>0);
+  const valorAberto = rnfArred(abertas.reduce((s,l)=>s+l.valor,0));
+  const valorVencido = rnfArred(vencidas.reduce((s,l)=>s+l.valor,0));
+  const aVencer = rnfArred(todas.filter(l=>l.situacao==='A vencer').reduce((s,l)=>s+l.valor,0));
+  const pgtos = rnfTotaisPgtos();
+  const podeEditar = podeAcao('relatorioNF','editar');
+  return `
+    <div class="card" style="margin-bottom:16px;padding:14px 16px">
+      <div style="display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap">
+        <div class="field" style="margin:0;min-width:170px"><label>Prazo de pagamento (dias)</label>
+          <input id="rnf-prazo-input" type="number" min="0" step="1" value="${prazo}" ${podeEditar?'':'disabled'} onchange="rnfSalvarPrazo(this.value)"></div>
+        <div class="field" style="margin:0"><label>Data de referência</label><div class="readval">${fmtDate(hoje)}</div></div>
+        <p style="font-size:.78rem;color:var(--ink-soft);margin:0;flex:1;min-width:240px">Premissa editável: vencimento = emissão + prazo (não consta na planilha original). Toda NF sem data de pagamento (exceto devoluções/bonificações) aparece aqui automaticamente.</p>
+      </div>
+    </div>
+    <div class="kpi-row" style="margin-bottom:16px">
+      <div class="kpi"><div class="label">NFs em aberto</div><div class="value">${abertas.length}</div></div>
+      <div class="kpi"><div class="label">Valor em aberto</div><div class="value warn">${fmtBRL(valorAberto)}</div></div>
+      <div class="kpi"><div class="label">Já vencidas</div><div class="value ${vencidas.length?'crit':''}">${vencidas.length}</div></div>
+      <div class="kpi"><div class="label">Valor vencido</div><div class="value ${valorVencido?'crit':''}">${fmtBRL(valorVencido)}</div></div>
+    </div>
+    <div class="kpi-row" style="margin-bottom:16px">
+      <div class="kpi"><div class="label">Pgtos não identificados</div><div class="value">${fmtBRL(pgtos)}</div></div>
+      <div class="kpi"><div class="label">Saldo após abatimento</div><div class="value">${fmtBRL(rnfArred(valorAberto-pgtos))}</div></div>
+      <div class="kpi"><div class="label">NFs a vencer</div><div class="value">${fmtBRL(aVencer)}</div></div>
+    </div>
+    <div class="toolbar">
+      <div class="search">${ICONS.search}<input id="rnf-search-input" placeholder="Buscar por nº da NF, cliente, município, empresa..." value="${esc(state.rnfSearch)}" oninput="rnfSetFiltro('rnfSearch', this.value)"></div>
+    </div>
+    <div class="card">
+      ${abertas.length===0 ? `<div class="empty"><h3>Nenhuma NF em aberto</h3><p>Todas as NFs têm data de pagamento.</p></div>`
+      : lista.length===0 ? `<div class="empty"><h3>Nada encontrado</h3><p>Ajuste a busca.</p></div>` : `
+      <div class="table-wrap"><table class="controle-tab">
+        <thead><tr><th class="num">#</th><th>Nº NF</th><th>Cliente</th><th>Município</th><th>Mês</th><th>Emissão</th><th>Vencimento (est.)</th><th class="num">Valor (R$)</th><th class="num">Dias em atraso</th><th>Situação</th><th>Observação</th><th>Empresa</th><th>CNPJ</th><th>Secretaria</th><th>Ordem/Empenho</th><th></th></tr></thead>
+        <tbody>
+          ${lista.map(l=>`
+            <tr>
+              <td class="num">${abertas.indexOf(l)+1}</td>
+              <td class="mono">${esc(l.numeroNF)}</td>
+              <td class="sec" style="max-width:220px" title="${esc(l.cliente)}">${esc(l.cliente)||'—'}</td>
+              <td class="sec" title="${esc(l.municipio)}">${esc(l.municipio)||'—'}</td>
+              <td>${esc(l.mes)||'—'}</td>
+              <td>${l.emissao?fmtDate(l.emissao):'—'}</td>
+              <td>${l.vencimento?fmtDate(l.vencimento):'—'}</td>
+              <td class="num" style="font-weight:600">${fmtBRL(l.valor)}</td>
+              <td class="num">${l.diasAtraso}</td>
+              <td>${l.diasAtraso>0?'<span class="pill crit">VENCIDO</span>':'<span class="pill warn">A vencer</span>'}</td>
+              <td style="max-width:260px;overflow:hidden;text-overflow:ellipsis" title="${esc(l.observacao)}">${esc(l.observacao)||''}</td>
+              <td>${esc(l.empresa)||'—'}</td>
+              <td class="mono">${esc(l.cnpj)||''}</td>
+              <td class="sec" title="${esc(l.secretaria)}">${esc(l.secretaria)||''}</td>
+              <td class="mono">${esc(l.ordemEmpenho)||''}</td>
+              <td>${rnfAcoesLinha(l, true)}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table></div>
+      <div class="controle-pag"><span>${lista.length} NF(s) em aberto${lista.length!==abertas.length?' (de '+abertas.length+')':''}</span></div>`}
+    </div>`;
+}
+
+function rnfRenderResumo(todas){
+  const r = rnfResumoCalc(todas);
+  const num = n=>fmtBRL(rnfArred(n));
+  const th = (t,c)=>`<th class="${c||''}">${t}</th>`;
+  const munis = state.rnfSoPendencia ? r.municipios.filter(m=>m.qtdAberto>0 || Math.abs(m.pgtos)>0.004) : r.municipios;
+  const tM = {qtdAberto:0, valorAberto:0, pgtos:0, saldo:0};
+  munis.forEach(m=>{ tM.qtdAberto += m.qtdAberto; tM.valorAberto += m.valorAberto; tM.pgtos += m.pgtos; tM.saldo += m.saldo; });
+  const linhaMes = (o, total)=>`<tr ${total?'style="font-weight:700;background:var(--neutral-soft)"':''}>
+      <td>${esc(o.mes||o.empresa)}</td><td class="num">${o.qtdVendas}</td><td class="num">${num(o.valorVendas)}</td>
+      ${o.mes!==undefined ? `<td class="num">${o.qtdPagas}</td><td class="num">${num(o.valorPago)}</td>` : ''}
+      <td class="num">${o.qtdAberto}</td><td class="num">${num(o.valorAberto)}</td>
+      ${o.mes!==undefined ? `<td class="num">${(rnfPctRecebido(o)*100).toFixed(1).replace('.',',')}%</td><td class="num">${o.qtdDev}</td><td class="num">${num(o.valorDev)}</td><td class="num">${num(o.aVencer)}</td>` : ''}
+    </tr>`;
+  return `
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="margin:14px 16px 6px;font-size:1rem">Resumo mês a mês — NFs ${rnfAnoRef(todas)}</h3>
+      <div class="table-wrap"><table class="controle-tab">
+        <thead><tr>${th('Mês')}${th('Qtd NFs (vendas)','num')}${th('Valor vendas (R$)','num')}${th('Qtd pagas','num')}${th('Valor pago (R$)','num')}${th('Qtd em aberto','num')}${th('Valor em aberto (R$)','num')}${th('% recebido (exc. a vencer)','num')}${th('Qtd devol./bonif.','num')}${th('Valor devol./bonif. (R$)','num')}${th('A vencer (R$)','num')}</tr></thead>
+        <tbody>${r.meses.filter(o=>o.qtdVendas||o.qtdDev||o.aVencer).map(o=>linhaMes(o,false)).join('')}${linhaMes(r.totalMeses,true)}</tbody>
+      </table></div>
+    </div>
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="margin:14px 16px 6px;font-size:1rem">Por empresa</h3>
+      <div class="table-wrap"><table class="controle-tab">
+        <thead><tr>${th('Empresa')}${th('Qtd NFs (vendas)','num')}${th('Valor vendas (R$)','num')}${th('Qtd em aberto','num')}${th('Valor em aberto (R$)','num')}</tr></thead>
+        <tbody>${r.empresas.map(o=>linhaMes(o,false)).join('')}${linhaMes(r.totalEmp,true)}</tbody>
+      </table></div>
+      <p style="font-size:.78rem;color:var(--ink-soft);margin:8px 16px 14px">A empresa é escolhida em cada NF. "Fora da faixa" reúne NFs sem empresa ou com outra empresa.</p>
+    </div>
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:14px 16px 6px">
+        <h3 style="margin:0;font-size:1rem">NFs em aberto por município</h3>
+        <label style="display:flex;align-items:center;gap:8px;font-size:.84rem"><input type="checkbox" style="width:auto" ${state.rnfSoPendencia?'checked':''} onchange="state.rnfSoPendencia=this.checked;render()">Só municípios com pendência</label>
+      </div>
+      <div class="table-wrap"><table class="controle-tab">
+        <thead><tr>${th('Município')}${th('Qtd em aberto','num')}${th('Valor em aberto (R$)','num')}${th('Mais antiga (emissão)')}${th('Pgtos não identificados (R$)','num')}${th('Saldo após abatimento (R$)','num')}</tr></thead>
+        <tbody>
+          ${munis.map(m=>`<tr>
+            <td>${esc(m.municipio)}</td><td class="num">${m.qtdAberto}</td><td class="num">${num(m.valorAberto)}</td>
+            <td>${m.maisAntiga?fmtDate(m.maisAntiga):''}</td><td class="num">${num(m.pgtos)}</td><td class="num" style="font-weight:600">${num(m.saldo)}</td></tr>`).join('')}
+          <tr style="font-weight:700;background:var(--neutral-soft)"><td>TOTAL</td><td class="num">${tM.qtdAberto}</td><td class="num">${num(tM.valorAberto)}</td><td></td><td class="num">${num(tM.pgtos)}</td><td class="num">${num(tM.saldo)}</td></tr>
+        </tbody>
+      </table></div>
+    </div>`;
+}
+function rnfAnoRef(todas){
+  const anos = todas.map(l=>(l.emissao||'').slice(0,4)).filter(Boolean);
+  if(!anos.length) return String(new Date().getFullYear());
+  const cont = {}; anos.forEach(a=>{ cont[a] = (cont[a]||0)+1; });
+  return Object.entries(cont).sort((a,b)=>b[1]-a[1])[0][0];
+}
+
+function rnfPgtosOrdenados(){
+  return [...state.relatorioNFPgtos].sort((a,b)=>(a.data||'').localeCompare(b.data||'') || String(a.criadoEm||'').localeCompare(String(b.criadoEm||'')));
+}
+function rnfRenderPgtos(){
+  const lista = rnfPgtosOrdenados();
+  const total = rnfTotaisPgtos();
+  const podeEditar = podeAcao('relatorioNF','editar'), podeExcluir = podeAcao('relatorioNF','excluir'), podeCriar = podeAcao('relatorioNF','criar');
+  return `
+    <div class="kpi-row" style="margin-bottom:16px">
+      <div class="kpi"><div class="label">Pagamentos listados</div><div class="value">${lista.length}</div></div>
+      <div class="kpi"><div class="label">Total não identificado</div><div class="value">${fmtBRL(total)}</div></div>
+    </div>
+    <p style="font-size:.84rem;color:var(--ink-soft);margin:0 0 12px">Valores recebidos que ainda não foram ligados a uma NF. Quando identificar, informe a NF e dê baixa na aba NFs. Esses valores abatem o saldo em aberto do município no Resumo.</p>
+    <div class="card">
+      ${lista.length===0 ? `<div class="empty"><h3>Nenhum pagamento não identificado</h3><p>Lance aqui os valores recebidos que ainda não têm NF vinculada.</p>
+        ${podeCriar?`<button class="btn btn-primary" onclick="openRelatorioNFPgtoForm()">${ICONS.plus}Novo pagamento</button>`:''}</div>` : `
+      <div class="table-wrap"><table class="controle-tab">
+        <thead><tr><th>Data</th><th>Cliente</th><th>Município</th><th>CNPJ</th><th class="num">Valor (R$)</th><th>Origem</th><th>NF identificada</th><th></th></tr></thead>
+        <tbody>
+          ${lista.map(p=>`<tr>
+            <td>${p.data?fmtDate(p.data):'—'}</td>
+            <td class="sec" style="max-width:300px" title="${esc(p.cliente)}">${esc(p.cliente)||'—'}</td>
+            <td>${esc(p.municipio)||''}</td><td class="mono">${esc(p.cnpj)||''}</td>
+            <td class="num" style="font-weight:600">${fmtBRL(Number(p.valor)||0)}</td>
+            <td class="sec" style="max-width:260px" title="${esc(p.origem)}">${esc(p.origem)||''}</td>
+            <td class="mono">${esc(p.nfIdentificada)||''}</td>
+            <td><div style="display:flex;align-items:center;justify-content:flex-end;gap:6px">
+              ${podeEditar?`<button class="icon-btn" title="Editar" onclick="openRelatorioNFPgtoForm('${p.id}')">${ICONS.edit}</button>`:''}
+              ${podeExcluir?`<button class="icon-btn" title="Excluir" onclick="deleteRelatorioNFPgto('${p.id}')">${ICONS.trash}</button>`:''}
+            </div></td></tr>`).join('')}
+          <tr style="font-weight:700;background:var(--neutral-soft)"><td colspan="4">TOTAL</td><td class="num">${fmtBRL(total)}</td><td colspan="3"></td></tr>
+        </tbody>
+      </table></div>`}
+    </div>`;
+}
+
+// ---------- formulários ----------
+// openRelatorioNFForm(id) edita; (null,null,idOrigem) duplica uma NF; (null,prefill) abre nova NF já preenchida.
+function openRelatorioNFForm(id, prefill, copiarDeId){
+  const existente = id ? state.relatorioNF.find(c=>c.id===id) : null;
+  if(id && !existente) return;
+  let base = existente;
+  if(!base && copiarDeId){ const o = state.relatorioNF.find(c=>c.id===copiarDeId); if(o) base = {...o, id:undefined, numeroNF:'', criadoEm:undefined, criadoPor:undefined, atualizadoEm:undefined, atualizadoPor:undefined, ordemPlanilha:undefined, dataPagamento:'', pagamentoObs:'', observacao:''}; }
+  if(!base && prefill) base = prefill;
+  const c = base || {};
+  const dl = (campo)=>[...new Set(state.relatorioNF.map(x=>String(x[campo]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(v=>`<option value="${esc(v)}">`).join('');
+  const emissaoIni = existente ? c.emissao : (c.emissao||todayISO());
+  const mesIni = existente ? (c.mes||'') : (c.mes||rnfMesDaData(emissaoIni));
+  const empresas = [...new Set([...RNF_EMPRESAS, c.empresa].filter(Boolean))];
+  openPanel(`
+    <div class="panel">
+      <div class="panel-header">
+        <h2>${existente?'Editar NF':'Nova NF'}</h2>
+        <button class="icon-btn" onclick="closePanel()">${ICONS.close}</button>
+      </div>
+      <form id="rnf-form" class="panel-body" onsubmit="return false">
+        <datalist id="rnf-clientes">${dl('cliente')}</datalist>
+        <datalist id="rnf-municipios">${dl('municipio')}</datalist>
+        <datalist id="rnf-tipos">${dl('tipo')}</datalist>
+        <datalist id="rnf-secretarias">${dl('secretaria')}</datalist>
+        <div class="field-grid">
+          <div class="field"><label>Nº da NF</label><input name="numeroNF" value="${esc(c.numeroNF)}" required></div>
+          <div class="field"><label>Emissão</label><input name="emissao" type="date" value="${esc(emissaoIni)}" required onchange="rnfFormMesAuto(this.value)"></div>
+          <div class="field"><label>Mês</label>
+            <select name="mes">${['',...RNF_MESES].map(m=>`<option value="${m}" ${mesIni===m?'selected':''}>${m||'—'}</option>`).join('')}</select></div>
+          <div class="field"><label>Valor (R$)</label><input name="valor" type="number" step="any" value="${c.valor!==undefined?esc(c.valor):''}" required></div>
+          <div class="field span2"><label>Cliente</label><input name="cliente" list="rnf-clientes" value="${esc(c.cliente)}" required onchange="rnfFormClienteAuto(this.value)"></div>
+          <div class="field"><label>Município</label><input name="municipio" list="rnf-municipios" value="${esc(c.municipio)}"></div>
+          <div class="field"><label>CNPJ</label><input name="cnpj" value="${esc(c.cnpj)}" placeholder="00.000.000/0000-00"></div>
+          <div class="field span2"><label>Tipo (CFOP)</label><input name="tipo" list="rnf-tipos" value="${esc(c.tipo)}" placeholder="Ex: VENDA FORA DO ESTADO PREFEITURA"></div>
+          <div class="field"><label>Empresa</label>
+            <select name="empresa"><option value="">—</option>${empresas.map(e=>`<option value="${esc(e)}" ${c.empresa===e?'selected':''}>${esc(e)}</option>`).join('')}</select></div>
+          <div class="field"><label>Secretaria</label><input name="secretaria" list="rnf-secretarias" value="${esc(c.secretaria)}"></div>
+          <div class="field"><label>Ordem/Empenho</label><input name="ordemEmpenho" value="${esc(c.ordemEmpenho)}"></div>
+          <div class="field"><label>Data de pagamento</label><input name="dataPagamento" type="date" value="${esc(c.dataPagamento)}"></div>
+          <div class="field span2"><label>Pagamento (texto, se não houver data)</label>
+            <input name="pagamentoObs" value="${esc(c.pagamentoObs)}" placeholder="Ex: OK, Pago, Em verificação">
+            <p style="font-size:.74rem;color:var(--ink-faint);margin:2px 0 0">Data ou texto preenchidos = NF paga. "Em verificação" mantém a NF em aberto até vencer.</p></div>
+          <div class="field span2"><label>Observação</label><input name="observacao" value="${esc(c.observacao)}"></div>
+        </div>
+      </form>
+      <div class="panel-footer">
+        <button class="btn btn-ghost" onclick="closePanel()">Cancelar</button>
+        ${existente?'':`<button class="btn btn-ghost" id="rnf-form-outro">Salvar e adicionar outra</button>`}
+        <button class="btn btn-primary" id="rnf-form-submit">${existente?'Salvar':'Adicionar NF'}</button>
+      </div>
+    </div>`);
+  const enviar = async (adicionarOutra)=>{
+    if(!exigirPermissaoAcao('relatorioNF', existente?'editar':'criar')) return;
+    const form = document.getElementById('rnf-form');
+    if(!form.reportValidity()) return;
+    const botoes = ['rnf-form-submit','rnf-form-outro'].map(i=>document.getElementById(i)).filter(Boolean);
+    if(botoes.some(b=>b.disabled)) return;
+    const fd = new FormData(form);
+    const txt = n=>(fd.get(n)||'').toString().trim();
+    const data = {
+      numeroNF: txt('numeroNF'), emissao: txt('emissao'), mes: txt('mes'), valor: Number(fd.get('valor'))||0,
+      cliente: txt('cliente').toUpperCase(), municipio: txt('municipio').toUpperCase(), cnpj: txt('cnpj'), tipo: txt('tipo').toUpperCase(),
+      empresa: txt('empresa'), secretaria: txt('secretaria'), ordemEmpenho: txt('ordemEmpenho'),
+      dataPagamento: txt('dataPagamento'), pagamentoObs: txt('pagamentoObs'), observacao: txt('observacao'),
+    };
+    const repetida = state.relatorioNF.find(n=>String(n.numeroNF).trim()===data.numeroNF && (n.empresa||'')===data.empresa && (!existente || n.id!==existente.id));
+    if(repetida){ toast('Já existe a NF '+data.numeroNF+(data.empresa?' da empresa '+data.empresa:'')+' no relatório.', 'crit'); return; }
+    botoes.forEach(b=>{ b.disabled = true; });
+    try{
+      if(existente) await updateRelatorioNF(existente.id, data);
+      else await createRelatorioNF({...data, origem:'manual', ordemPlanilha: Date.now()});
+      closePanel();
+      if(adicionarOutra && !existente){
+        setTimeout(()=>openRelatorioNFForm(null, {emissao:data.emissao, mes:data.mes, cliente:data.cliente, municipio:data.municipio, cnpj:data.cnpj, tipo:data.tipo, empresa:data.empresa, secretaria:data.secretaria, ordemEmpenho:data.ordemEmpenho}), 260);
+      }
+    }catch(e){ botoes.forEach(b=>{ b.disabled = false; }); }
+  };
+  document.getElementById('rnf-form-submit').onclick = ()=>enviar(false);
+  const outro = document.getElementById('rnf-form-outro');
+  if(outro) outro.onclick = ()=>enviar(true);
+}
+function rnfFormMesAuto(iso){
+  const form = document.getElementById('rnf-form'); if(!form) return;
+  const m = rnfMesDaData(iso); if(m) form.elements.mes.value = m;
+}
+// Ao escolher um cliente já conhecido, completa município, CNPJ, tipo e empresa (só os campos vazios).
+function rnfFormClienteAuto(valor){
+  const form = document.getElementById('rnf-form'); if(!form) return;
+  const k = rnfNorm(valor);
+  const ref = [...state.relatorioNF].reverse().find(n=>rnfNorm(n.cliente)===k);
+  if(!ref) return;
+  [['municipio','municipio'],['cnpj','cnpj'],['tipo','tipo'],['empresa','empresa'],['secretaria','secretaria']].forEach(([campo,orig])=>{
+    const el = form.elements[campo]; if(el && !el.value && ref[orig]) el.value = ref[orig];
+  });
+}
+
+function openRelatorioNFPgtoForm(id){
+  const existente = id ? state.relatorioNFPgtos.find(c=>c.id===id) : null;
+  if(id && !existente) return;
+  const c = existente || {};
+  const dl = (campo)=>[...new Set(state.relatorioNFPgtos.map(x=>String(x[campo]||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(v=>`<option value="${esc(v)}">`).join('');
+  const munis = [...new Set([...state.relatorioNF.map(n=>String(n.municipio||'').trim()), ...state.relatorioNFPgtos.map(n=>String(n.municipio||'').trim())].filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR')).map(v=>`<option value="${esc(v)}">`).join('');
+  openPanel(`
+    <div class="panel">
+      <div class="panel-header">
+        <h2>${existente?'Editar pagamento':'Novo pagamento não identificado'}</h2>
+        <button class="icon-btn" onclick="closePanel()">${ICONS.close}</button>
+      </div>
+      <form id="rnf-pgto-form" class="panel-body" onsubmit="return false">
+        <datalist id="rnf-pg-clientes">${dl('cliente')}</datalist>
+        <datalist id="rnf-pg-munis">${munis}</datalist>
+        <div class="field-grid">
+          <div class="field"><label>Data</label><input name="data" type="date" value="${esc(existente?c.data:(c.data||todayISO()))}" required></div>
+          <div class="field"><label>Valor (R$)</label><input name="valor" type="number" step="any" value="${c.valor!==undefined?esc(c.valor):''}" required></div>
+          <div class="field span2"><label>Cliente</label><input name="cliente" list="rnf-pg-clientes" value="${esc(c.cliente)}" required></div>
+          <div class="field"><label>Município</label><input name="municipio" list="rnf-pg-munis" value="${esc(c.municipio)}"></div>
+          <div class="field"><label>CNPJ</label><input name="cnpj" value="${esc(c.cnpj)}"></div>
+          <div class="field span2"><label>Origem</label><input name="origem" value="${esc(c.origem)}" placeholder="De onde veio a informação"></div>
+          <div class="field span2"><label>NF identificada</label><input name="nfIdentificada" value="${esc(c.nfIdentificada)}" placeholder="Preencha quando identificar a NF"></div>
+        </div>
+      </form>
+      <div class="panel-footer">
+        <button class="btn btn-ghost" onclick="closePanel()">Cancelar</button>
+        <button class="btn btn-primary" id="rnf-pgto-submit">${existente?'Salvar':'Adicionar'}</button>
+      </div>
+    </div>`);
+  document.getElementById('rnf-pgto-submit').onclick = async ()=>{
+    if(!exigirPermissaoAcao('relatorioNF', existente?'editar':'criar')) return;
+    const form = document.getElementById('rnf-pgto-form');
+    if(!form.reportValidity()) return;
+    const btn = document.getElementById('rnf-pgto-submit');
+    if(btn.disabled) return;
+    btn.disabled = true;
+    const fd = new FormData(form); const txt = n=>(fd.get(n)||'').toString().trim();
+    const data = {data:txt('data'), valor:Number(fd.get('valor'))||0, cliente:txt('cliente'), municipio:txt('municipio').toUpperCase(), cnpj:txt('cnpj'), origem:txt('origem'), nfIdentificada:txt('nfIdentificada')};
+    try{
+      if(existente) await updateRelatorioNFPgto(existente.id, data);
+      else await createRelatorioNFPgto({...data, origemCadastro:'manual'});
+      closePanel();
+    }catch(e){ btn.disabled = false; }
+  };
+}
+
+// ---------- exportação ----------
+async function exportarRelatorioNFXLSX(){
+  const serial = iso=>{ const [a,m,d] = (iso||'').split('-').map(Number); return a ? Math.round(Date.UTC(a,m-1,d)/86400000)+25569 : ''; };
+  const todas = rnfLinhas();
+  const ord = [...todas].sort((a,b)=>(a.ordemPlanilha||0)-(b.ordemPlanilha||0) || String(a.criadoEm||'').localeCompare(String(b.criadoEm||'')) || (a.emissao||'').localeCompare(b.emissao||''));
+  const abertas = rnfAtrasadosLista(todas);
+  const r = rnfResumoCalc(todas);
+  const prazo = rnfPrazo(), hoje = rnfHoje();
+  const datasCols = (ws, linhas, cols)=>{ for(let i=1;i<linhas;i++) cols.forEach(c=>{ const cell = ws[XLSX.utils.encode_cell({r:i,c})]; if(cell && typeof cell.v==='number') cell.z = 'dd/mm/yyyy'; }); };
+  const moeda = (ws, linhas, cols)=>{ for(let i=1;i<linhas;i++) cols.forEach(c=>{ const cell = ws[XLSX.utils.encode_cell({r:i,c})]; if(cell && typeof cell.v==='number') cell.z = '#,##0.00'; }); };
+  const wb = XLSX.utils.book_new();
+  // NFs
+  const aoa1 = [['Mês','Nº NF','Cliente','Município','Tipo (CFOP)','Emissão','Valor (R$)','Data Pagamento','Observação','Situação','Vencimento (est.)','Dias em atraso','Empresa','CNPJ','Secretaria','Ordem/Empenho']];
+  ord.forEach(l=>aoa1.push([l.mes||'', l.nfOrd?l.nfOrd:l.numeroNF, l.cliente||'', l.municipio||'', l.tipo||'', serial(l.emissao), l.valor, l.dataPagamento?serial(l.dataPagamento):(l.pagamentoObs||''), l.observacao||'', l.situacao, serial(l.vencimento), l.diasAtraso===null?'':l.diasAtraso, l.empresa||'', l.cnpj||'', l.secretaria||'', l.ordemEmpenho||'']));
+  const ws1 = XLSX.utils.aoa_to_sheet(aoa1);
+  ws1['!cols'] = [10,9,34,22,30,12,13,14,40,16,14,10,18,19,16,14].map(w=>({wch:w}));
+  datasCols(ws1, aoa1.length, [5,7,10]); moeda(ws1, aoa1.length, [6]);
+  ws1['!autofilter'] = {ref:'A1:P'+aoa1.length};
+  XLSX.utils.book_append_sheet(wb, ws1, 'NFs 2026');
+  // Pagamentos atrasados
+  const aoa2 = [['Prazo de pagamento (dias)', prazo, 'Data de referência', serial(hoje)], [], ['#','Nº NF','Cliente','Município','Mês','Emissão','Vencimento (est.)','Valor (R$)','Dias em atraso','Situação','Observação','Empresa','CNPJ','Secretaria','Ordem/Empenho']];
+  abertas.forEach((l,i)=>aoa2.push([i+1, l.nfOrd?l.nfOrd:l.numeroNF, l.cliente||'', l.municipio||'', l.mes||'', serial(l.emissao), serial(l.vencimento), l.valor, l.diasAtraso, l.diasAtraso>0?'VENCIDO':'A vencer', l.observacao||'', l.empresa||'', l.cnpj||'', l.secretaria||'', l.ordemEmpenho||'']));
+  const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
+  ws2['!cols'] = [6,9,34,22,10,12,14,13,10,11,40,18,19,16,14].map(w=>({wch:w}));
+  ws2['D1'] && typeof ws2['D1'].v==='number' && (ws2['D1'].z = 'dd/mm/yyyy');
+  for(let i=3;i<aoa2.length;i++){ [5,6].forEach(c=>{ const cell = ws2[XLSX.utils.encode_cell({r:i,c})]; if(cell && typeof cell.v==='number') cell.z='dd/mm/yyyy'; }); const v = ws2[XLSX.utils.encode_cell({r:i,c:7})]; if(v) v.z='#,##0.00'; }
+  XLSX.utils.book_append_sheet(wb, ws2, 'Pagamentos Atrasados');
+  // Resumo mensal
+  const aoa3 = [['Resumo mês a mês — NFs '+rnfAnoRef(todas)], [], ['Mês','Qtd NFs (vendas)','Valor vendas (R$)','Qtd pagas','Valor pago (R$)','Qtd em aberto','Valor em aberto (R$)','% recebido (exc. a vencer)','Qtd devol./bonif.','Valor devol./bonif. (R$)','A vencer (R$)']];
+  [...r.meses.filter(o=>o.qtdVendas||o.qtdDev||o.aVencer), r.totalMeses].forEach(o=>aoa3.push([o.mes, o.qtdVendas, rnfArred(o.valorVendas), o.qtdPagas, rnfArred(o.valorPago), o.qtdAberto, rnfArred(o.valorAberto), rnfPctRecebido(o), o.qtdDev, rnfArred(o.valorDev), rnfArred(o.aVencer)]));
+  aoa3.push([], ['Por empresa'], ['Empresa','Qtd NFs (vendas)','Valor vendas (R$)','Qtd em aberto','Valor em aberto (R$)']);
+  [...r.empresas, r.totalEmp].forEach(o=>aoa3.push([o.empresa, o.qtdVendas, rnfArred(o.valorVendas), o.qtdAberto, rnfArred(o.valorAberto)]));
+  aoa3.push([], ['NFs em aberto por município'], ['Município','Qtd em aberto','Valor em aberto (R$)','Mais antiga (emissão)','Pgtos não identificados (R$)','Saldo após abatimento (R$)']);
+  r.municipios.forEach(m=>aoa3.push([m.municipio, m.qtdAberto, rnfArred(m.valorAberto), m.maisAntiga?serial(m.maisAntiga):'', rnfArred(m.pgtos), rnfArred(m.saldo)]));
+  const ws3 = XLSX.utils.aoa_to_sheet(aoa3);
+  ws3['!cols'] = [30,16,18,16,18,18,18,18,16,18,14].map(w=>({wch:w}));
+  Object.keys(ws3).forEach(k=>{ if(k[0]!=='!' && typeof ws3[k].v==='number'){ const col = XLSX.utils.decode_cell(k).c; if(Number.isInteger(ws3[k].v) || ws3[k].v===0) return; ws3[k].z = (col===7 && ws3[k].v<=1.0001 && ws3[k].v>=0) ? '0.0%' : '#,##0.00'; } });
+  XLSX.utils.book_append_sheet(wb, ws3, 'Resumo Mensal');
+  // Pgtos não identificados
+  const aoa4 = [['Pagamentos recebidos ainda não identificados (sem NF vinculada)'], [], ['', '', '', 'TOTAL', rnfTotaisPgtos()], ['Data','Cliente','Município','CNPJ','Valor (R$)','Origem','NF identificada']];
+  rnfPgtosOrdenados().forEach(p=>aoa4.push([serial(p.data), p.cliente||'', p.municipio||'', p.cnpj||'', Number(p.valor)||0, p.origem||'', p.nfIdentificada||'']));
+  const ws4 = XLSX.utils.aoa_to_sheet(aoa4);
+  ws4['!cols'] = [12,50,22,19,14,50,16].map(w=>({wch:w}));
+  for(let i=4;i<aoa4.length;i++){ const d = ws4[XLSX.utils.encode_cell({r:i,c:0})]; if(d && typeof d.v==='number') d.z='dd/mm/yyyy'; const v = ws4[XLSX.utils.encode_cell({r:i,c:4})]; if(v) v.z='#,##0.00'; }
+  if(ws4['E3']) ws4['E3'].z = '#,##0.00';
+  XLSX.utils.book_append_sheet(wb, ws4, 'Pgtos Não Identificados');
+  const bin = XLSX.write(wb, {type:'array', bookType:'xlsx'});
+  try{
+    await criarDownloadsLocal().save({filename:'relatorio-de-notas-fiscais.xlsx', data:new Blob([bin], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})});
+    toast('Planilha gerada com '+ord.length+' NF(s) e '+state.relatorioNFPgtos.length+' pagamento(s) não identificado(s).');
   }catch(e){
     if(e && e.code==='declined'){ /* usuário cancelou o download */ }
     else toast('Não foi possível gerar a planilha.', 'crit');
@@ -8691,6 +9439,7 @@ function renderMain(){
   if(state.view==='pedido-detail') return renderPedidoDetail();
   if(state.view==='controlepedidos') return renderControlePedidos();
   if(state.view==='controlemanual') return renderControleManual();
+  if(state.view==='relatorionf') return renderRelatorioNF();
   if(state.view==='pedidoscompra') return renderPedidosCompraList();
   if(state.view==='pedidocompra-detail') return renderPedidoCompraDetail();
   if(state.view==='faturamento') return renderFaturasList();
