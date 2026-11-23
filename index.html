@@ -290,9 +290,11 @@ td.wrap-desc, .wrap-desc{ min-width:200px; max-width:320px; white-space:normal; 
   #print-area .doc-fields .doc-hl{ background:#ffff00 !important; padding:1pt 3pt; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   #print-area .doc-fields .doc-hl .label{ color:#141414; }
   #print-area table{ width:100%; border-collapse:collapse; font-size:7pt; }
-  #print-area table.doc-table-pedido{ font-size:10pt; }
+  #print-area table.doc-table-pedido{ font-size:9pt; table-layout:fixed; }
   #print-area th, #print-area td{ border:1px solid #ccc; padding:3pt 4pt; text-align:left; }
-  #print-area table.doc-table-pedido th, #print-area table.doc-table-pedido td{ padding:4pt 5pt; }
+  #print-area table.doc-table-pedido th, #print-area table.doc-table-pedido td{ padding:3pt 4pt; overflow-wrap:anywhere; }
+  #print-area table.doc-table-pedido th{ font-size:8pt; }
+  #print-area table.doc-table-pedido th:nth-child(1){ width:6%; } #print-area table.doc-table-pedido th:nth-child(2){ width:5%; } #print-area table.doc-table-pedido th:nth-child(4){ width:12%; } #print-area table.doc-table-pedido th:nth-child(5){ width:7%; } #print-area table.doc-table-pedido th:nth-child(6){ width:11%; } #print-area table.doc-table-pedido th:nth-child(7){ width:12%; } #print-area table.doc-table-pedido th:nth-child(8){ width:13%; }
   #print-area .doc-pedido-top{ display:flex; justify-content:space-between; align-items:flex-start; gap:16pt; margin-bottom:12pt; }
   #print-area .doc-pedido-top .doc-fields{ margin-bottom:0; flex:1; }
   #print-area table.doc-mini{ width:auto; flex-shrink:0; font-size:8pt; }
