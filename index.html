@@ -4163,6 +4163,140 @@ function openNotaCompraForm(id){
   };
 }
 
+// ----- Lançar os vencimentos da nota de compra no Financeiro -----
+// Parcelas sugeridas = duplicatas da NF; se a nota não traz cobrança (ex.: à vista), uma única parcela com o total.
+function nfcParcelasParaFinanceiro(n){
+  const dups = (n.duplicatas||[]).filter(d=>Number(d.valor)>0);
+  if(dups.length) return dups.map(d=>({numero:d.numero||'', vencimento:d.vencimento||'', valor:nfcRound(Number(d.valor)||0,2)}));
+  return [{numero:'', vencimento:n.dataEmissao||'', valor:nfcRound(Number(n.valorNota)||0,2)}];
+}
+function openLancarFinanceiroNota(id){
+  const n = notaCompraById(id);
+  if(!n) return;
+  if(!exigirPermissaoAcao('financeiro','criar')) return;
+  const parcelas = nfcParcelasParaFinanceiro(n);
+  const semDuplicatas = !(n.duplicatas||[]).some(d=>Number(d.valor)>0);
+  const ja = n.financeiroLancado || null;
+  const empDefault = n.empresaId || (state.empresas.length===1 ? state.empresas[0].id : '');
+  openPanel(`
+    <div class="panel">
+      <div class="panel-header">
+        <h2>Lançar NF ${esc(n.numero)} no Financeiro</h2>
+        <button class="icon-btn" onclick="closePanel()">${ICONS.close}</button>
+      </div>
+      <form id="nfc-fin-form" class="panel-body">
+        ${ja?`<div class="card" style="margin-bottom:14px;border-color:var(--warn)"><div class="detail-body" style="color:var(--warn)">Esta nota já foi lançada no Financeiro em ${fmtDate((ja.em||'').slice(0,10))}${ja.por?' por '+esc(ja.por):''} (${ja.parcelas||'?'} parcela(s), ${fmtBRL(ja.valor)}). Lançar de novo cria lançamentos duplicados.</div></div>`:''}
+        ${semDuplicatas?`<p style="font-size:.78rem;color:var(--ink-faint);margin:0 0 12px">Esta NF não traz duplicatas (cobrança). Sugeri uma única parcela com o total da nota — ajuste o vencimento e o valor.</p>`:''}
+        <div class="field-grid">
+          <div class="field"><label>Empresa</label>
+            <select name="empresaId" required>
+              <option value="">Selecione...</option>
+              ${state.empresas.map(e=>`<option value="${e.id}" ${empDefault===e.id?'selected':''}>${esc(e.nomeFantasia||e.razaoSocial)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field"><label>NF</label>
+            <input name="nf" value="${esc(n.numero)}" placeholder="Nº da nota">
+          </div>
+          <div class="field span2"><label>Razão / Item</label>
+            <input name="descricao" value="${esc((n.emitenteNome||'')+' - NF '+n.numero)}" required>
+          </div>
+          <div class="field span2"><label>Em qual coluna lançar o valor</label>
+            <select name="tipoValor">
+              <option value="valorSemAlterar">Sem alterar o lucro</option>
+              <option value="valorAltera">Altera o lucro</option>
+              <option value="valorPessoaFisica">Pessoa física</option>
+            </select>
+            <p style="font-size:.72rem;color:var(--ink-faint);margin:2px 0 0">"Altera o lucro" entra automaticamente nas despesas do mês em Lucro.</p>
+          </div>
+        </div>
+        <h3 class="section-title" style="margin:16px 0 8px">Vencimentos (${parcelas.length})</h3>
+        <div class="table-wrap"><table>
+          <thead><tr><th style="width:28px"></th><th>Duplicata</th><th>Vencimento</th><th class="thc">Valor (R$)</th></tr></thead>
+          <tbody>
+            ${parcelas.map(p=>`
+              <tr class="nfc-fin-row">
+                <td><input type="checkbox" class="nfc-fin-inc" checked></td>
+                <td class="mono">${esc(p.numero)||'—'}</td>
+                <td><div class="field"><input type="date" class="nfc-fin-data" value="${esc(p.vencimento)}"></div></td>
+                <td><div class="field"><input type="number" step="0.01" min="0" class="nfc-fin-valor" value="${p.valor}" style="text-align:right"></div></td>
+              </tr>`).join('')}
+          </tbody>
+        </table></div>
+        <p id="nfc-fin-total" style="font-size:.8rem;margin:10px 0 0"></p>
+      </form>
+      <div class="panel-footer">
+        <button class="btn btn-ghost" onclick="closePanel()">Cancelar</button>
+        <button class="btn btn-primary" id="nfc-fin-submit">Lançar no Financeiro</button>
+      </div>
+    </div>`);
+
+  const form = document.getElementById('nfc-fin-form');
+  const linhasMarcadas = ()=>[...form.querySelectorAll('.nfc-fin-row')]
+    .filter(r=>r.querySelector('.nfc-fin-inc').checked)
+    .map(r=>({vencimento:r.querySelector('.nfc-fin-data').value, valor:Number(r.querySelector('.nfc-fin-valor').value)}));
+  const atualizarTotal = ()=>{
+    const ls = linhasMarcadas();
+    const soma = nfcRound(ls.reduce((s,l)=>s+(l.valor||0),0),2);
+    const dif = nfcRound(soma-(Number(n.valorNota)||0),2);
+    document.getElementById('nfc-fin-total').innerHTML = `<strong>${ls.length}</strong> parcela(s) · total <strong>${fmtBRL(soma)}</strong> · total da NF ${fmtBRL(n.valorNota)}`+(Math.abs(dif)>0.005?` <span style="color:var(--warn)">(diferença de ${fmtBRL(dif)})</span>`:'');
+  };
+  form.addEventListener('input', atualizarTotal);
+  form.addEventListener('change', atualizarTotal);
+  atualizarTotal();
+
+  document.getElementById('nfc-fin-submit').onclick = async ()=>{
+    if(!form.reportValidity()) return;
+    if(!exigirPermissaoAcao('financeiro','criar')) return;
+    const linhas = linhasMarcadas();
+    if(!linhas.length){ toast('Marque ao menos um vencimento.', 'crit'); return; }
+    if(linhas.some(l=>!l.vencimento || !(l.valor>0))){ toast('Preencha o vencimento e o valor de todas as parcelas marcadas.', 'crit'); return; }
+    if(ja){
+      const ok = await confirmDialog('Esta NF já foi lançada no Financeiro. Lançar de novo vai duplicar os lançamentos. Continuar?');
+      if(!ok) return;
+    }
+    const fd = new FormData(form);
+    const emp = empresaById(fd.get('empresaId'));
+    const campo = fd.get('tipoValor');
+    const total = linhas.length;
+    const agora = new Date().toISOString();
+    const ids = [];
+    try{
+      const batch = state.db.batch();
+      linhas.forEach((l,i)=>{
+        const ref = state.db.collection('financeiro').doc();
+        ids.push(ref.id);
+        batch.set(ref, {
+          dataVencimento: l.vencimento,
+          empresaId: fd.get('empresaId') || null,
+          empresaNome: emp ? (emp.nomeFantasia||emp.razaoSocial||'') : '',
+          nf: fd.get('nf') || null,
+          descricao: fd.get('descricao'),
+          parcela: total>1 ? ((i+1)+'/'+total) : 'Única',
+          valorSemAlterar: null, valorAltera: null, valorPessoaFisica: null,
+          [campo]: nfcRound(l.valor,2),
+          notaCompraId: n.id, origem: 'notaCompra',
+          dataInclusao: agora,
+        });
+      });
+      await batch.commit();
+    }catch(e){
+      console.error(e);
+      const permissao = e && (e.code==='permission-denied' || e.code==='invalid_argument');
+      toast(permissao ? 'Sem permissão para gravar (modo somente leitura).' : 'Não foi possível lançar no Financeiro: '+(e&&e.message?e.message:'erro desconhecido'), 'crit');
+      return;
+    }
+    // Marca a nota como lançada (só informativo; se falhar, os lançamentos já estão salvos).
+    try{
+      await state.db.doc('notasCompra/'+n.id).update({financeiroLancado:{
+        em: agora, por: state.nome||'—', parcelas: total,
+        valor: nfcRound(linhas.reduce((s,l)=>s+l.valor,0),2), ids: [...((ja&&ja.ids)||[]), ...ids],
+      }});
+    }catch(e){ console.error(e); }
+    toast(total>1 ? total+' vencimentos lançados no Financeiro.' : 'Vencimento lançado no Financeiro.');
+    closePanel();
+  };
+}
+
 // ----- Vínculo item de NF ↔ Custo/Mínimo -----
 // Chave do vínculo = CNPJ do fornecedor + código do produto no fornecedor (ou a descrição, se não houver código).
 // Assim, várias cores/estampas (códigos diferentes) podem apontar para um único item do Custo/Mínimo,
@@ -4581,7 +4715,7 @@ function renderNotasCompra(){
           ${mostrar.map(n=>`
             <tr onclick="setView('notacompra-detail',{notaCompraId:'${n.id}'})">
               <td style="white-space:nowrap">${fmtDate(n.dataEmissao)}</td>
-              <td class="mono" style="white-space:nowrap">${esc(n.numero)}${n.serie?`<span style="color:var(--ink-faint)"> / ${esc(n.serie)}</span>`:''}</td>
+              <td class="mono" style="white-space:nowrap">${esc(n.numero)}${n.serie?`<span style="color:var(--ink-faint)"> / ${esc(n.serie)}</span>`:''}${n.financeiroLancado?` <span title="Lançada no Financeiro" style="color:var(--ok)">$</span>`:''}</td>
               <td class="truncate">${esc(n.emitenteNome)}</td>
               <td class="mono" style="white-space:nowrap">${esc(n.emitenteCnpj)||'—'}</td>
               <td class="truncate">${esc(n.empresaNome)||`<span style="color:var(--warn)">não vinculada</span>`}</td>
@@ -4613,6 +4747,7 @@ function renderNotaCompraDetail(){
         <div class="sub">${esc(n.emitenteNome)} <span style="color:var(--ink-faint)">·</span> emitida em ${fmtDate(n.dataEmissao)}</div>
       </div>
       <div class="actions">
+        ${podeAcao('financeiro','criar')?`<button class="btn ${n.financeiroLancado?'btn-ghost':'btn-primary'}" onclick="openLancarFinanceiroNota('${n.id}')">${ICONS.wallet}${n.financeiroLancado?'Lançar novamente no Financeiro':'Lançar no Financeiro'}</button>`:''}
         ${podeAcao('notasCompra','editar')?`<button class="btn btn-ghost" onclick="openNotaCompraForm('${n.id}')">${ICONS.edit}Editar</button>`:''}
         ${podeAcao('notasCompra','excluir')?`<button class="btn btn-danger" onclick="deleteNotaCompra('${n.id}')">${ICONS.trash}Excluir</button>`:''}
       </div>
@@ -4681,7 +4816,7 @@ function renderNotaCompraDetail(){
     </div>
 
     ${(n.duplicatas||[]).length?`
-    <div class="itens-head"><h3 class="section-title" style="margin:0">Cobrança / duplicatas (${n.duplicatas.length})</h3></div>
+    <div class="itens-head"><h3 class="section-title" style="margin:0">Cobrança / duplicatas (${n.duplicatas.length})</h3>${n.financeiroLancado?`<span style="font-size:.8rem;color:var(--ok)">Lançada no Financeiro em ${fmtDate((n.financeiroLancado.em||'').slice(0,10))} (${n.financeiroLancado.parcelas||'?'} parcela(s))</span>`:''}</div>
     <div class="card">
       <div class="table-wrap"><table>
         <thead><tr><th>Duplicata</th><th>Vencimento</th><th class="thc">Valor</th></tr></thead>
